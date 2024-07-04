@@ -1,0 +1,215 @@
+From 5948f8ba2e74febb26d08e23c7a69c19345da6b7 Mon Sep 17 00:00:00 2001
+From: Moritz <moritz.holzer@haw-hamburg.de>
+Date: Thu, 4 Jul 2024 20:35:19 +0200
+Subject: [PATCH] applied old patches
+
+diff --git a/coap/er-coap-13/er-coap-13.h b/coap/er-coap-13/er-coap-13.h
+index e7c8433..eb7a3a2 100644
+--- a/coap/er-coap-13/er-coap-13.h
++++ b/coap/er-coap-13/er-coap-13.h
+@@ -55,7 +55,7 @@
+ 
+ #define COAP_MAX_TRANSMIT_WAIT               ((COAP_RESPONSE_TIMEOUT * ( (1 << (COAP_MAX_RETRANSMIT + 1) ) - 1) * COAP_ACK_RANDOM_FACTOR))
+ #define COAP_MAX_TRANSMIT_SPAN               ((COAP_RESPONSE_TIMEOUT * ( (1 << COAP_MAX_RETRANSMIT) - 1) * COAP_ACK_RANDOM_FACTOR))
+-#define COAP_EXCHANGE_LIFETIME               (COAP_MAX_TRANSMIT_SPAN + (2 * COAP_MAX_LATENCY) + COAP_PROCESSING_DELAY)
++#define COAP_EXCHANGE_LIFETIME               (time_t)(COAP_MAX_TRANSMIT_SPAN + (2 * COAP_MAX_LATENCY) + COAP_PROCESSING_DELAY)
+ 
+ #define COAP_HEADER_LEN                      4 /* | version:0x03 type:0x0C tkl:0xF0 | code | mid:0x00FF | mid:0xFF00 | */
+ #define COAP_ETAG_LEN                        8 /* The maximum number of bytes for the ETag */
+diff --git a/core/bootstrap.c b/core/bootstrap.c
+index c8ea000..838a16d 100644
+--- a/core/bootstrap.c
++++ b/core/bootstrap.c
+@@ -532,11 +532,11 @@ void bootstrap_step(lwm2m_context_t * contextP,
+             break;
+ 
+         case STATE_BS_HOLD_OFF:
+-            if (targetP->registration <= currentTime)
++            if (targetP->registration <= (time_t)currentTime)
+             {
+                 prv_requestBootstrap(contextP, targetP);
+             }
+-            else if (*timeoutP > targetP->registration - currentTime)
++            else if (*timeoutP > targetP->registration - (time_t)currentTime)
+             {
+                 *timeoutP = targetP->registration - currentTime;
+             }
+@@ -547,12 +547,12 @@ void bootstrap_step(lwm2m_context_t * contextP,
+             break;
+ 
+         case STATE_BS_PENDING:
+-            if (targetP->registration <= currentTime)
++            if (targetP->registration <= (time_t)currentTime)
+             {
+                targetP->status = STATE_BS_FAILING;
+                *timeoutP = 0;
+             }
+-            else if (*timeoutP > targetP->registration - currentTime)
++            else if (*timeoutP > targetP->registration - (time_t)currentTime)
+             {
+                 *timeoutP = targetP->registration - currentTime;
+             }
+@@ -754,6 +754,7 @@ uint8_t bootstrap_handleCommand(lwm2m_context_t * contextP,
+ {
+     uint8_t result;
+     lwm2m_media_type_t format;
++    (void)response;
+ 
+     LOG_ARG_DBG("Code: %02X", message->code);
+     LOG_ARG_DBG("%s", LOG_URI_TO_STRING(uriP));
+@@ -1037,6 +1038,8 @@ uint8_t bootstrap_handleRequest(lwm2m_context_t * contextP,
+     uint8_t result;
+     char * name;
+     lwm2m_media_type_t format = 0;
++    (void)uriP;
++    (void)response;
+ 
+     LOG_ARG_DBG("%s", LOG_URI_TO_STRING(uriP));
+     if (contextP->bootstrapCallback == NULL) return COAP_500_INTERNAL_SERVER_ERROR;
+diff --git a/core/internals.h b/core/internals.h
+index b30969f..c35a8cc 100644
+--- a/core/internals.h
++++ b/core/internals.h
+@@ -62,7 +62,13 @@
+ #include <stddef.h>
+ #include <stdbool.h>
+ 
+-#include "er-coap-13/er-coap-13.h"
++#include "er-coap-13.h"
++
++#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
++#define LWM2M_LITTLE_ENDIAN
++#else
++#define LWM2M_BIG_ENDIAN
++#endif
+ 
+ #if LWM2M_LOG_LEVEL != LWM2M_LOG_DISABLED
+ #include <inttypes.h>
+diff --git a/core/observe.c b/core/observe.c
+index af70fd6..67bd3c9 100644
+--- a/core/observe.c
++++ b/core/observe.c
+@@ -469,7 +469,7 @@ lwm2m_observed_t * observe_findByUri(lwm2m_context_t * contextP,
+ }
+ 
+ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
+-                                  lwm2m_uri_t * uriP)
++                                  const lwm2m_uri_t * uriP)
+ {
+     lwm2m_observed_t * targetP;
+ 
+@@ -747,7 +747,6 @@ void observe_step(lwm2m_context_t * contextP,
+                      && (watcherP->parameters->toSet & LWM2M_ATTR_FLAG_MIN_PERIOD) != 0)
+                     {
+                         LOG_ARG_DBG("Checking minimal period (%d s)", watcherP->parameters->minPeriod);
+-
+                         if ((time_t)(watcherP->lastTime + watcherP->parameters->minPeriod) > currentTime) {
+                             // Minimum Period did not elapse yet
+                             interval = watcherP->lastTime + watcherP->parameters->minPeriod - currentTime;
+diff --git a/core/packet.c b/core/packet.c
+index 93a6171..3d07e49 100644
+--- a/core/packet.c
++++ b/core/packet.c
+@@ -129,6 +129,9 @@ static void handle_reset(lwm2m_context_t * contextP,
+                          void * fromSessionH,
+                          coap_packet_t * message)
+ {
++    (void)contextP;
++    (void)fromSessionH;
++    (void)message;
+ #ifdef LWM2M_CLIENT_MODE
+     LOG_DBG("Entering");
+     observe_cancel(contextP, message->mid, fromSessionH);
+@@ -140,6 +143,8 @@ static uint8_t handle_request(lwm2m_context_t * contextP,
+                               coap_packet_t * message,
+                               coap_packet_t * response)
+ {
++    (void)contextP;
++    (void)fromSessionH;
+     lwm2m_uri_t uri;
+     lwm2m_request_type_t requestType;
+     uint8_t result = COAP_IGNORE;
+diff --git a/core/registration.c b/core/registration.c
+index 15f18c5..11c4a1d 100644
+--- a/core/registration.c
++++ b/core/registration.c
+@@ -2050,6 +2050,9 @@ void registration_step(lwm2m_context_t * contextP,
+                        time_t currentTime,
+                        time_t * timeoutP)
+ {
++    (void)contextP;
++    (void)currentTime;
++    (void)timeoutP;
+ #ifdef LWM2M_CLIENT_MODE
+     lwm2m_server_t * targetP = contextP->serverList;
+ 
+@@ -2080,9 +2083,9 @@ void registration_step(lwm2m_context_t * contextP,
+             time_t interval;
+ 
+             nextUpdate = targetP->lifetime;
+-            if (COAP_MAX_TRANSMIT_WAIT < nextUpdate)
++            if ((time_t)COAP_MAX_TRANSMIT_WAIT < nextUpdate)
+             {
+-                nextUpdate -= COAP_MAX_TRANSMIT_WAIT;
++                nextUpdate -= (time_t)COAP_MAX_TRANSMIT_WAIT;
+             }
+             else
+             {
+diff --git a/core/utils.c b/core/utils.c
+index 2192e4b..101cf5b 100644
+--- a/core/utils.c
++++ b/core/utils.c
+@@ -852,6 +852,8 @@ uint8_t utils_getResponseFormat(uint8_t accept_num,
+ lwm2m_server_t * utils_findServer(lwm2m_context_t * contextP,
+                                   void * fromSessionH)
+ {
++    (void)contextP;
++    (void)fromSessionH;
+     lwm2m_server_t * targetP;
+ 
+     targetP = contextP->serverList;
+diff --git a/examples/client/object_security.c b/examples/client/object_security.c
+index 54d7d32..359fe5b 100644
+--- a/examples/client/object_security.c
++++ b/examples/client/object_security.c
+@@ -586,7 +586,7 @@ lwm2m_object_t * get_security_object(int serverId,
+             targetP->securityMode = LWM2M_SECURITY_MODE_PRE_SHARED_KEY;
+             if (bsPskId)
+             {
+-                targetP->publicIdentity = strdup(bsPskId);
++                targetP->publicIdentity = lwm2m_strdup(bsPskId);
+                 targetP->publicIdLen = strlen(bsPskId);
+             }
+             if (pskLen > 0)
+diff --git a/include/liblwm2m.h b/include/liblwm2m.h
+index ae1460d..f8c9e96 100644
+--- a/include/liblwm2m.h
++++ b/include/liblwm2m.h
+@@ -390,7 +390,6 @@ typedef struct _lwm2m_data_t lwm2m_data_t;
+ 
+ struct _lwm2m_data_t
+ {
+-    lwm2m_data_type_t type;
+     uint16_t    id;
+     union
+     {
+@@ -414,6 +413,7 @@ struct _lwm2m_data_t
+             uint16_t objectInstanceId;
+         } asObjLink;
+     } value;
++    lwm2m_data_type_t type;
+ };
+ 
+ typedef enum {
+@@ -873,7 +873,7 @@ int lwm2m_remove_object(lwm2m_context_t * contextP, uint16_t id);
+ int lwm2m_update_registration(lwm2m_context_t * contextP, uint16_t shortServerID, bool withObjects);
+ // send deregistration to all servers connected to client
+ void lwm2m_deregister(lwm2m_context_t * context);
+-void lwm2m_resource_value_changed(lwm2m_context_t * contextP, lwm2m_uri_t * uriP);
++void lwm2m_resource_value_changed(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP);
+ 
+ #ifndef LWM2M_VERSION_1_0
+ // send resources specified by URIs to the server specified by the server short
+-- 
+2.34.1
+
