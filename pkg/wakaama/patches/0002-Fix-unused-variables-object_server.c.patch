@@ -1,0 +1,22 @@
+From f558600a02f65967e2ee79a311501f2df4f73334 Mon Sep 17 00:00:00 2001
+From: Moritz <moritz.holzer@haw-hamburg.de>
+Date: Thu, 4 Jul 2024 20:45:48 +0200
+Subject: [PATCH] Fix-unused-variables-object_server.c
+
+---
+diff --git a/examples/client/object_server.c b/examples/client/object_server.c
+index aeb3ad5..2baee9e 100644
+--- a/examples/client/object_server.c
++++ b/examples/client/object_server.c
+@@ -958,6 +958,8 @@ static uint8_t prv_server_execute(lwm2m_context_t *contextP,
+ 
+     /* unused parameter */
+     (void)contextP;
++    (void)buffer;
++    (void)length;
+ 
+     targetP = (server_instance_t *)lwm2m_list_find(objectP->instanceList, instanceId);
+     if (NULL == targetP) return COAP_404_NOT_FOUND;
+-- 
+2.34.1
+
