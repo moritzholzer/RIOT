@@ -56,8 +56,8 @@ typedef struct lwm2m_obj_light_control_inst {
  * @return COAP_404_NOT_FOUND if the instance was not found
  * @return COAP_500_INTERNAL_SERVER_ERROR otherwise
  */
-static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * num_data, 
-                        lwm2m_data_t ** data_array, lwm2m_object_t * object);
+static uint8_t _read_cb(lwm2m_context_t *context, uint16_t instance_id, int *num_data,
+                        lwm2m_data_t **data_array, lwm2m_object_t *object);
 
 /**
  * @brief 'Write' callback for the LwM2M Light Control object implementation.
@@ -72,8 +72,9 @@ static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * n
  * @return COAP_400_BAD_REQUEST if a value is not encoded correctly
  * @return COAP_500_INTERNAL_SERVER_ERROR otherwise
  */
-static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int num_data,
-                         lwm2m_data_t * data_array, lwm2m_object_t * object, lwm2m_write_type_t write_type);
+static uint8_t _write_cb(lwm2m_context_t *context, uint16_t instance_id, int num_data,
+                         lwm2m_data_t *data_array, lwm2m_object_t *object,
+                         lwm2m_write_type_t write_type);
 
 /**
  * @brief Gets the current value of a given @p instance.
@@ -95,9 +96,9 @@ static uint8_t _get_value(lwm2m_data_t *data, lwm2m_obj_light_control_inst_t *in
 static void _mark_resource_changed(uint16_t instance_id, uint16_t resource_id);
 
 struct lwm2m_light_control_object {
-    lwm2m_object_t wakaama_object;                   /**< Wakaama internal object */
-    mutex_t lock;                                    /**< mutex for the instances access */
-    lwm2m_obj_light_control_inst_t *free_instances;  /**< list of free instances */
+    lwm2m_object_t wakaama_object;                                              /**< Wakaama internal object */
+    mutex_t lock;                                                               /**< mutex for the instances access */
+    lwm2m_obj_light_control_inst_t *free_instances;                             /**< list of free instances */
     lwm2m_obj_light_control_inst_t instances[CONFIG_LWM2M_LIGHT_INSTANCES_MAX]; /**< instances */
 };
 
@@ -132,7 +133,7 @@ static uint8_t _get_value(lwm2m_data_t *data, lwm2m_obj_light_control_inst_t *in
 
     case LWM2M_LIGHT_CONTROL_ON_TIME_ID:
         if (instance->status) {
-            int64_t time = (int64_t) ztimer_stopwatch_measure(&instance->stopwatch);
+            int64_t time = (int64_t)ztimer_stopwatch_measure(&instance->stopwatch);
             lwm2m_data_encode_int(time, data);
         }
         else {
@@ -154,8 +155,8 @@ static uint8_t _get_value(lwm2m_data_t *data, lwm2m_obj_light_control_inst_t *in
     return COAP_205_CONTENT;
 }
 
-static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * num_data, 
-                        lwm2m_data_t ** data_array, lwm2m_object_t * object)
+static uint8_t _read_cb(lwm2m_context_t *context, uint16_t instance_id, int *num_data,
+                        lwm2m_data_t **data_array, lwm2m_object_t *object)
 {
     (void)context;
 
@@ -216,8 +217,9 @@ free_out:
     return result;
 }
 
-static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int num_data,
-                         lwm2m_data_t * data_array, lwm2m_object_t * object, lwm2m_write_type_t write_type)
+static uint8_t _write_cb(lwm2m_context_t *context, uint16_t instance_id, int num_data,
+                         lwm2m_data_t *data_array, lwm2m_object_t *object,
+                         lwm2m_write_type_t write_type)
 {
     (void)context;
     (void)write_type;
@@ -260,7 +262,8 @@ static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int nu
             if (val != 0) {
                 DEBUG("[lwm2m:light_control:write]: invalid on_time value, only can write 0\n");
                 result = COAP_400_BAD_REQUEST;
-            } else {
+            }
+            else {
                 ztimer_stopwatch_reset(&instance->stopwatch);
                 _mark_resource_changed(instance_id, LWM2M_LIGHT_CONTROL_ON_TIME_ID);
             }
@@ -274,7 +277,8 @@ static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int nu
             if (val < 0 || val > 100) {
                 DEBUG("[lwm2m:light_control:write]: invalid dimmer value\n");
                 result = COAP_400_BAD_REQUEST;
-            } else {
+            }
+            else {
                 instance->dimmer = (uint8_t)val;
                 call_cb = true;
                 _mark_resource_changed(instance_id, LWM2M_LIGHT_CONTROL_DIMMER_ID);
@@ -283,7 +287,8 @@ static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int nu
         }
 
         case LWM2M_LIGHT_CONTROL_COLOUR_ID:
-            if (data_array[i].type != LWM2M_TYPE_STRING && data_array[i].type != LWM2M_TYPE_OPAQUE) {
+            if (data_array[i].type != LWM2M_TYPE_STRING &&
+                data_array[i].type != LWM2M_TYPE_OPAQUE) {
                 DEBUG("[lwm2m:light_control:write]: invalid type for color"
                       "(%" PRId8 ")\n", (uint8_t)(data_array[i].type));
                 result = COAP_400_BAD_REQUEST;
@@ -305,7 +310,8 @@ static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int nu
             break;
 
         case LWM2M_LIGHT_CONTROL_APP_TYPE_ID:
-            if (data_array[i].type != LWM2M_TYPE_STRING && data_array[i].type != LWM2M_TYPE_OPAQUE) {
+            if (data_array[i].type != LWM2M_TYPE_STRING &&
+                data_array[i].type != LWM2M_TYPE_OPAQUE) {
                 DEBUG("[lwm2m:light_control:write]: invalid type for app_type"
                       "(%" PRId8 ")\n", (uint8_t)(data_array[i].type));
                 result = COAP_400_BAD_REQUEST;
@@ -358,10 +364,10 @@ lwm2m_object_t *lwm2m_object_light_control_init(lwm2m_client_data_t *client_data
         _light_control_object.instances[i].list.next = NULL;
         _light_control_object.instances[i].list.id = UINT16_MAX;
 
-        _FREE_INSTANCES(_light_control_object) = (lwm2m_obj_light_control_inst_t *) LWM2M_LIST_ADD(
+        _FREE_INSTANCES(_light_control_object) = (lwm2m_obj_light_control_inst_t *)LWM2M_LIST_ADD(
             _FREE_INSTANCES(_light_control_object),
             &(_light_control_object.instances[i])
-        );
+            );
     }
 
     _light_control_object.wakaama_object.userData = client_data;
@@ -395,19 +401,18 @@ int lwm2m_object_light_control_instance_create(const lwm2m_obj_light_control_arg
         _instance_id = (uint16_t)instance_id;
 
         /* check that the ID is free to use */
-        if (LWM2M_LIST_FIND(_USED_INSTANCES(_light_control_object), _instance_id ) != NULL)
-        {
+        if (LWM2M_LIST_FIND(_USED_INSTANCES(_light_control_object), _instance_id ) != NULL) {
             DEBUG("[lwm2m:light_control]: instance ID %" PRIi32 " already in use\n", instance_id);
             goto free_out;
         }
     }
 
     /* try to allocate an instance, by popping a free node from the list */
-    _FREE_INSTANCES(_light_control_object) = (lwm2m_obj_light_control_inst_t *) lwm2m_list_remove(
-        (lwm2m_list_t *) _FREE_INSTANCES(_light_control_object),
+    _FREE_INSTANCES(_light_control_object) = (lwm2m_obj_light_control_inst_t *)lwm2m_list_remove(
+        (lwm2m_list_t *)_FREE_INSTANCES(_light_control_object),
         UINT16_MAX,
-        (lwm2m_list_t **) &instance
-    );
+        (lwm2m_list_t **)&instance
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:light_control]: can't allocate new instance\n");
@@ -456,7 +461,7 @@ int lwm2m_object_light_control_instance_create(const lwm2m_obj_light_control_arg
     _USED_INSTANCES(_light_control_object) = LWM2M_LIST_ADD(
         _USED_INSTANCES(_light_control_object),
         instance
-    );
+        );
 
     result = 0;
 
@@ -480,7 +485,7 @@ int lwm2m_object_light_control_update_dimmer(uint16_t instance_id, uint8_t dimme
     instance = (lwm2m_obj_light_control_inst_t *)LWM2M_LIST_FIND(
         _USED_INSTANCES(_light_control_object),
         instance_id
-    );
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:light_control]: can't find instance %" PRId16 "\n", instance_id);
@@ -513,7 +518,7 @@ int lwm2m_object_light_control_update_status(uint16_t instance_id, bool status, 
     instance = (lwm2m_obj_light_control_inst_t *)LWM2M_LIST_FIND(
         _USED_INSTANCES(_light_control_object),
         instance_id
-    );
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:light_control]: can't find instance %" PRId16 "\n", instance_id);
@@ -557,7 +562,7 @@ int lwm2m_object_light_control_update_color(uint16_t instance_id, const char *co
     instance = (lwm2m_obj_light_control_inst_t *)LWM2M_LIST_FIND(
         _USED_INSTANCES(_light_control_object),
         instance_id
-    );
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:light_control]: can't find instance %" PRId16 "\n", instance_id);
@@ -598,7 +603,7 @@ int lwm2m_object_light_control_update_app_type(uint16_t instance_id, const char 
     instance = (lwm2m_obj_light_control_inst_t *)LWM2M_LIST_FIND(
         _USED_INSTANCES(_light_control_object),
         instance_id
-    );
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:light_control]: can't find instance %" PRId16 "\n", instance_id);

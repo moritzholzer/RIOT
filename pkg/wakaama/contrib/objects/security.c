@@ -129,8 +129,8 @@ typedef struct lwm2m_obj_security_inst {
  * @retval COAP_404_NOT_FOUND               when resource can't be found
  * @retval COAP_500_INTERNAL_SERVER_ERROR   otherwise
  */
-static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * num_data, 
-                        lwm2m_data_t ** data_array, lwm2m_object_t * object);
+static uint8_t _read_cb(lwm2m_context_t *context, uint16_t instance_id, int *num_data,
+                        lwm2m_data_t **data_array, lwm2m_object_t *object);
 
 /**
  * @brief 'Write' callback for the security object.
@@ -143,8 +143,8 @@ static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * n
  * @retval COAP_204_CHANGED                 on success
  * @retval COAP_400_BAD_REQUEST             otherwise
  */
-static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int num_data,
-                         lwm2m_data_t * data_array, lwm2m_object_t * object,
+static uint8_t _write_cb(lwm2m_context_t *context, uint16_t instance_id, int num_data,
+                         lwm2m_data_t *data_array, lwm2m_object_t *object,
                          lwm2m_write_type_t write_type);
 
 /**
@@ -156,8 +156,8 @@ static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int nu
  * @retval COAP_202_DELETED                 on success
  * @retval COAP_404_NOT_FOUND               when the instance can't be found
  */
-static uint8_t _delete_cb(lwm2m_context_t * context, uint16_t instance_id,
-                          lwm2m_object_t * object);
+static uint8_t _delete_cb(lwm2m_context_t *context, uint16_t instance_id,
+                          lwm2m_object_t *object);
 
 /**
  * @brief 'Create' callback for the security object.
@@ -170,8 +170,8 @@ static uint8_t _delete_cb(lwm2m_context_t * context, uint16_t instance_id,
  * @retval COAP_201_CREATED                 on success
  * @retval COAP_500_INTERNAL_SERVER_ERROR   otherwise
  */
-static uint8_t _create_cb(lwm2m_context_t * context, uint16_t instance_id, int num_data,
-                          lwm2m_data_t * data_array, lwm2m_object_t * object);
+static uint8_t _create_cb(lwm2m_context_t *context, uint16_t instance_id, int num_data,
+                          lwm2m_data_t *data_array, lwm2m_object_t *object);
 
 /**
  * @brief Get a value from a security object instance.
@@ -212,12 +212,12 @@ static int _update_credential(lwm2m_obj_security_inst_t *instance);
 #endif /* MODULE_WAKAAMA_CLIENT_DTLS */
 
 struct lwm2m_security_object {
-    lwm2m_object_t wakaama_object;              /**< Wakaama internal object */
-    mutex_t lock;                               /**< mutex for the instances access */
-    lwm2m_obj_security_inst_t *free_instances;  /**< list of free instances */
-    lwm2m_obj_security_inst_t instances[CONFIG_LWM2M_OBJ_SECURITY_INSTANCES_MAX]; /**< instances */
+    lwm2m_object_t wakaama_object;                                                  /**< Wakaama internal object */
+    mutex_t lock;                                                                   /**< mutex for the instances access */
+    lwm2m_obj_security_inst_t *free_instances;                                      /**< list of free instances */
+    lwm2m_obj_security_inst_t instances[CONFIG_LWM2M_OBJ_SECURITY_INSTANCES_MAX];   /**< instances */
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-    credman_tag_t tag_count;                    /**< counter for the credential tags */
+    credman_tag_t tag_count;                                                        /**< counter for the credential tags */
 #endif
 };
 
@@ -227,19 +227,19 @@ struct lwm2m_security_object {
 static struct lwm2m_security_object _security_object = {
     .lock = MUTEX_INIT,
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-    .tag_count= CONFIG_LWM2M_CREDMAN_TAG_BASE,
+    .tag_count = CONFIG_LWM2M_CREDMAN_TAG_BASE,
 #endif
     .wakaama_object = {
-        .next           = NULL,
-        .objID          = LWM2M_SECURITY_OBJECT_ID,
-        .instanceList   = NULL,
-        .readFunc       = _read_cb,
-        .writeFunc      = _write_cb,
-        .createFunc     = _create_cb,
-        .deleteFunc     = _delete_cb,
-        .executeFunc    = NULL,
-        .discoverFunc   = NULL,
-        .userData       = NULL,
+        .next = NULL,
+        .objID = LWM2M_SECURITY_OBJECT_ID,
+        .instanceList = NULL,
+        .readFunc = _read_cb,
+        .writeFunc = _write_cb,
+        .createFunc = _create_cb,
+        .deleteFunc = _delete_cb,
+        .executeFunc = NULL,
+        .discoverFunc = NULL,
+        .userData = NULL,
     }
 };
 
@@ -269,8 +269,10 @@ static int _update_credential(lwm2m_obj_security_inst_t *instance)
 
     DEBUG("[lwm2m:security]: updating credential with tag %d\n", cred.tag);
     if (type == CREDMAN_TYPE_PSK) {
-        DEBUG("[lwm2m:security]: PSK ID: %.*s\n", (unsigned)instance->pub_key_or_id_len, instance->pub_key_or_id);
-        DEBUG("[lwm2m:security]: PSK Key: %.*s\n", (unsigned)instance->secret_key_len, instance->secret_key);
+        DEBUG("[lwm2m:security]: PSK ID: %.*s\n", (unsigned)instance->pub_key_or_id_len,
+              instance->pub_key_or_id);
+        DEBUG("[lwm2m:security]: PSK Key: %.*s\n", (unsigned)instance->secret_key_len,
+              instance->secret_key);
 
         cred.params.psk.id.s = instance->pub_key_or_id;
         cred.params.psk.id.len = instance->pub_key_or_id_len;
@@ -333,72 +335,72 @@ static int _get_value(lwm2m_data_t *data, lwm2m_obj_security_inst_t *instance)
 
     /* resource IDs are defined by Wakaama in liblwm2m.h */
     switch (data->id) {
-        case LWM2M_SECURITY_URI_ID:
-            lwm2m_data_encode_string(instance->uri, data);
-            break;
+    case LWM2M_SECURITY_URI_ID:
+        lwm2m_data_encode_string(instance->uri, data);
+        break;
 
-        case LWM2M_SECURITY_BOOTSTRAP_ID:
-            lwm2m_data_encode_bool(instance->is_bootstrap, data);
-            break;
+    case LWM2M_SECURITY_BOOTSTRAP_ID:
+        lwm2m_data_encode_bool(instance->is_bootstrap, data);
+        break;
 
-        case LWM2M_SECURITY_SHORT_SERVER_ID:
-            lwm2m_data_encode_int(instance->short_id, data);
-            break;
+    case LWM2M_SECURITY_SHORT_SERVER_ID:
+        lwm2m_data_encode_int(instance->short_id, data);
+        break;
 
-        case LWM2M_SECURITY_HOLD_OFF_ID:
-            lwm2m_data_encode_int(instance->client_hold_off_time, data);
-            break;
+    case LWM2M_SECURITY_HOLD_OFF_ID:
+        lwm2m_data_encode_int(instance->client_hold_off_time, data);
+        break;
 
-        case LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID:
-            lwm2m_data_encode_int(instance->bs_account_timeout, data);
-            break;
+    case LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID:
+        lwm2m_data_encode_int(instance->bs_account_timeout, data);
+        break;
 
-        case LWM2M_SECURITY_SECURITY_ID:
-            lwm2m_data_encode_int(instance->security_mode, data);
-            break;
+    case LWM2M_SECURITY_SECURITY_ID:
+        lwm2m_data_encode_int(instance->security_mode, data);
+        break;
 
-        case LWM2M_SECURITY_PUBLIC_KEY_ID:
+    case LWM2M_SECURITY_PUBLIC_KEY_ID:
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-            lwm2m_data_encode_opaque(instance->pub_key_or_id, instance->pub_key_or_id_len, data);
+        lwm2m_data_encode_opaque(instance->pub_key_or_id, instance->pub_key_or_id_len, data);
 #else
-            return COAP_404_NOT_FOUND;
+        return COAP_404_NOT_FOUND;
 #endif
-            break;
+        break;
 
-        case LWM2M_SECURITY_SECRET_KEY_ID:
+    case LWM2M_SECURITY_SECRET_KEY_ID:
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-            lwm2m_data_encode_opaque(instance->secret_key, instance->secret_key_len, data);
+        lwm2m_data_encode_opaque(instance->secret_key, instance->secret_key_len, data);
 #else
-            return COAP_404_NOT_FOUND;
+        return COAP_404_NOT_FOUND;
 #endif
-            break;
+        break;
 
-        case LWM2M_SECURITY_SERVER_PUBLIC_KEY_ID:
+    case LWM2M_SECURITY_SERVER_PUBLIC_KEY_ID:
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-            lwm2m_data_encode_opaque(instance->server_pub_key, instance->server_pub_key_len, data);
+        lwm2m_data_encode_opaque(instance->server_pub_key, instance->server_pub_key_len, data);
 #else
-            return COAP_404_NOT_FOUND;
+        return COAP_404_NOT_FOUND;
 #endif
-            break;
+        break;
 
-        /* not implemented */
-        case LWM2M_SECURITY_SMS_SECURITY_ID:
-        case LWM2M_SECURITY_SMS_KEY_PARAM_ID:
-        case LWM2M_SECURITY_SMS_SECRET_KEY_ID:
-        case LWM2M_SECURITY_SMS_SERVER_NUMBER_ID:
-            return COAP_404_NOT_FOUND;
+    /* not implemented */
+    case LWM2M_SECURITY_SMS_SECURITY_ID:
+    case LWM2M_SECURITY_SMS_KEY_PARAM_ID:
+    case LWM2M_SECURITY_SMS_SECRET_KEY_ID:
+    case LWM2M_SECURITY_SMS_SERVER_NUMBER_ID:
+        return COAP_404_NOT_FOUND;
 
-        default:
-            return COAP_404_NOT_FOUND;
+    default:
+        return COAP_404_NOT_FOUND;
     }
     return COAP_205_CONTENT;
 }
 
-static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * num_data, 
-                        lwm2m_data_t ** data_array, lwm2m_object_t * object)
+static uint8_t _read_cb(lwm2m_context_t *context, uint16_t instance_id, int *num_data,
+                        lwm2m_data_t **data_array, lwm2m_object_t *object)
 {
     (void)context;
-    
+
     lwm2m_obj_security_inst_t *instance;
     uint8_t result;
     int i = 0;
@@ -445,7 +447,7 @@ static uint8_t _read_cb(lwm2m_context_t * context, uint16_t instance_id, int * n
         *num_data = resNum;
 
         /* prepare the resource ID of all resources for the request */
-        for (i = 0 ; i < resNum ; i++) {
+        for (i = 0; i < resNum; i++) {
             (*data_array)[i].id = resList[i];
         }
     }
@@ -462,8 +464,8 @@ out:
     return result;
 }
 
-static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int num_data,
-                         lwm2m_data_t * data_array, lwm2m_object_t * object,
+static uint8_t _write_cb(lwm2m_context_t *context, uint16_t instance_id, int num_data,
+                         lwm2m_data_t *data_array, lwm2m_object_t *object,
                          lwm2m_write_type_t write_type)
 {
     (void)context;
@@ -487,157 +489,157 @@ static uint8_t _write_cb(lwm2m_context_t * context, uint16_t instance_id, int nu
         lwm2m_data_t *data = &data_array[i];
 
         switch (data->id) {
-            case LWM2M_SECURITY_URI_ID:
-                DEBUG("[lwm2m:security:write]: writing URI\n");
-                if (data->value.asBuffer.length > CONFIG_LWM2M_URI_MAX_SIZE - 1) {
-                    result = COAP_400_BAD_REQUEST;
-                }
+        case LWM2M_SECURITY_URI_ID:
+            DEBUG("[lwm2m:security:write]: writing URI\n");
+            if (data->value.asBuffer.length > CONFIG_LWM2M_URI_MAX_SIZE - 1) {
+                result = COAP_400_BAD_REQUEST;
+            }
 
-                strncpy(instance->uri, (char *)data->value.asBuffer.buffer,
-                        data->value.asBuffer.length);
-                instance->uri[data->value.asBuffer.length] = '\0';
+            strncpy(instance->uri, (char *)data->value.asBuffer.buffer,
+                    data->value.asBuffer.length);
+            instance->uri[data->value.asBuffer.length] = '\0';
+            result = COAP_204_CHANGED;
+            break;
+
+        case LWM2M_SECURITY_BOOTSTRAP_ID:
+            DEBUG("[lwm2m:security:write]: writing bootstrap\n");
+            if (lwm2m_data_decode_bool(data, &(instance->is_bootstrap)) == 1) {
                 result = COAP_204_CHANGED;
-                break;
+            }
+            else {
+                result = COAP_400_BAD_REQUEST;
+            }
+            break;
 
-            case LWM2M_SECURITY_BOOTSTRAP_ID:
-                DEBUG("[lwm2m:security:write]: writing bootstrap\n");
-                if (lwm2m_data_decode_bool(data, &(instance->is_bootstrap)) == 1) {
+        case LWM2M_SECURITY_SECURITY_ID:
+            DEBUG("[lwm2m:security:write]: writing sec. mode\n");
+            if (lwm2m_data_decode_int(data, &value) == 1) {
+                /* check if it is a valid security mode */
+                if (LWM2M_SECURITY_MODE_NONE == value ||
+                    LWM2M_SECURITY_MODE_PRE_SHARED_KEY == value ||
+                    LWM2M_SECURITY_MODE_RAW_PUBLIC_KEY == value ||
+                    LWM2M_SECURITY_MODE_CERTIFICATE == value) {
+                    instance->security_mode = value;
                     result = COAP_204_CHANGED;
+                    break;
                 }
-                else {
-                    result = COAP_400_BAD_REQUEST;
-                }
-                break;
+            }
+            result = COAP_400_BAD_REQUEST;
+            break;
 
-            case LWM2M_SECURITY_SECURITY_ID:
-                DEBUG("[lwm2m:security:write]: writing sec. mode\n");
-                if (lwm2m_data_decode_int(data, &value) == 1) {
-                    /* check if it is a valid security mode */
-                    if (LWM2M_SECURITY_MODE_NONE == value ||
-                        LWM2M_SECURITY_MODE_PRE_SHARED_KEY == value ||
-                        LWM2M_SECURITY_MODE_RAW_PUBLIC_KEY == value ||
-                        LWM2M_SECURITY_MODE_CERTIFICATE == value) {
-                        instance->security_mode = value;
-                        result = COAP_204_CHANGED;
-                        break;
-                    }
+        case LWM2M_SECURITY_SHORT_SERVER_ID:
+            DEBUG("[lwm2m:security:write]: writing short ID\n");
+            if (lwm2m_data_decode_int(data, &value) == 1) {
+                /* check valid range of value */
+                if (value > 0 && value < UINT16_MAX) {
+                    instance->short_id = value;
+                    result = COAP_204_CHANGED;
+                    break;
                 }
-                result = COAP_400_BAD_REQUEST;
-                break;
+            }
+            result = COAP_400_BAD_REQUEST;
+            break;
 
-            case LWM2M_SECURITY_SHORT_SERVER_ID:
-                DEBUG("[lwm2m:security:write]: writing short ID\n");
-                if (lwm2m_data_decode_int(data, &value) == 1) {
-                    /* check valid range of value */
-                    if (value > 0 && value < UINT16_MAX) {
-                        instance->short_id = value;
-                        result = COAP_204_CHANGED;
-                        break;
-                    }
+        case LWM2M_SECURITY_HOLD_OFF_ID:
+            DEBUG("[lwm2m:security:write]: writing hold off time\n");
+            if (lwm2m_data_decode_int(data, &value) == 1) {
+                /* check valid range of value */
+                if (value >= 0 && value <= UINT32_MAX) {
+                    instance->client_hold_off_time = value;
+                    result = COAP_204_CHANGED;
+                    break;
                 }
-                result = COAP_400_BAD_REQUEST;
-                break;
+            }
+            result = COAP_400_BAD_REQUEST;
+            break;
 
-            case LWM2M_SECURITY_HOLD_OFF_ID:
-                DEBUG("[lwm2m:security:write]: writing hold off time\n");
-                if (lwm2m_data_decode_int(data, &value) == 1) {
-                    /* check valid range of value */
-                    if (value >= 0 && value <= UINT32_MAX) {
-                        instance->client_hold_off_time = value;
-                        result = COAP_204_CHANGED;
-                        break;
-                    }
+        case LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID:
+            DEBUG("[lwm2m:security:write]: writing bootstrap timeout\n");
+            if (lwm2m_data_decode_int(data, &value) == 1) {
+                /* check valid range of value */
+                if (value >= 0 && value <= UINT32_MAX) {
+                    instance->bs_account_timeout = value;
+                    result = COAP_204_CHANGED;
+                    break;
                 }
-                result = COAP_400_BAD_REQUEST;
-                break;
+            }
+            result = COAP_400_BAD_REQUEST;
+            break;
 
-            case LWM2M_SECURITY_BOOTSTRAP_TIMEOUT_ID:
-                DEBUG("[lwm2m:security:write]: writing bootstrap timeout\n");
-                if (lwm2m_data_decode_int(data, &value) == 1) {
-                    /* check valid range of value */
-                    if (value >= 0 && value <= UINT32_MAX) {
-                        instance->bs_account_timeout = value;
-                        result = COAP_204_CHANGED;
-                        break;
-                    }
-                }
-                result = COAP_400_BAD_REQUEST;
-                break;
-
-            case LWM2M_SECURITY_PUBLIC_KEY_ID:
+        case LWM2M_SECURITY_PUBLIC_KEY_ID:
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-                DEBUG("[lwm2m:security:write]: writing pub. key or ID\n");
-                if (data->value.asBuffer.length >
-                    CONFIG_LWM2M_OBJ_SECURITY_PUB_KEY_ID_BUFSIZE) {
-                    result = COAP_500_INTERNAL_SERVER_ERROR;
-                }
+            DEBUG("[lwm2m:security:write]: writing pub. key or ID\n");
+            if (data->value.asBuffer.length >
+                CONFIG_LWM2M_OBJ_SECURITY_PUB_KEY_ID_BUFSIZE) {
+                result = COAP_500_INTERNAL_SERVER_ERROR;
+            }
 
-                /* copy the new value */
-                memcpy(instance->pub_key_or_id, data->value.asBuffer.buffer,
-                       data->value.asBuffer.length);
+            /* copy the new value */
+            memcpy(instance->pub_key_or_id, data->value.asBuffer.buffer,
+                   data->value.asBuffer.length);
 
-                /* if the size changed we need to modify the registered credential */
-                if (instance->pub_key_or_id_len != data->value.asBuffer.length) {
-                    instance->pub_key_or_id_len = data->value.asBuffer.length;
-                    _update_credential(instance);
-                }
+            /* if the size changed we need to modify the registered credential */
+            if (instance->pub_key_or_id_len != data->value.asBuffer.length) {
+                instance->pub_key_or_id_len = data->value.asBuffer.length;
+                _update_credential(instance);
+            }
 #endif /* MODULE_WAKAAMA_CLIENT_DTLS */
-                result = COAP_204_CHANGED;
-                break;
+            result = COAP_204_CHANGED;
+            break;
 
-            case LWM2M_SECURITY_SECRET_KEY_ID:
+        case LWM2M_SECURITY_SECRET_KEY_ID:
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-                DEBUG("[lwm2m:security:write]: writing sec. key\n");
-                if (data->value.asBuffer.length >
-                    CONFIG_LWM2M_OBJ_SECURITY_SEC_KEY_BUFSIZE) {
-                    result = COAP_500_INTERNAL_SERVER_ERROR;
-                }
+            DEBUG("[lwm2m:security:write]: writing sec. key\n");
+            if (data->value.asBuffer.length >
+                CONFIG_LWM2M_OBJ_SECURITY_SEC_KEY_BUFSIZE) {
+                result = COAP_500_INTERNAL_SERVER_ERROR;
+            }
 
-                /* copy the new value */
-                memcpy(instance->secret_key, data->value.asBuffer.buffer,
-                       data->value.asBuffer.length);
+            /* copy the new value */
+            memcpy(instance->secret_key, data->value.asBuffer.buffer,
+                   data->value.asBuffer.length);
 
-                /* if the size changed we need to modify the registered credential */
-                if (instance->secret_key_len != data->value.asBuffer.length) {
-                    instance->secret_key_len = data->value.asBuffer.length;
-                    _update_credential(instance);
-                }
+            /* if the size changed we need to modify the registered credential */
+            if (instance->secret_key_len != data->value.asBuffer.length) {
+                instance->secret_key_len = data->value.asBuffer.length;
+                _update_credential(instance);
+            }
 #endif /* MODULE_WAKAAMA_CLIENT_DTLS */
-                result = COAP_204_CHANGED;
-                break;
+            result = COAP_204_CHANGED;
+            break;
 
-            case LWM2M_SECURITY_SERVER_PUBLIC_KEY_ID:
+        case LWM2M_SECURITY_SERVER_PUBLIC_KEY_ID:
 #if IS_USED(MODULE_WAKAAMA_CLIENT_DTLS)
-                DEBUG("[lwm2m:security:write]: writing server pub. key\n");
-                if (data->value.asBuffer.length >
-                    CONFIG_LWM2M_OBJ_SECURITY_SERVER_PUB_KEY_BUFSIZE) {
-                    result = COAP_500_INTERNAL_SERVER_ERROR;
-                }
+            DEBUG("[lwm2m:security:write]: writing server pub. key\n");
+            if (data->value.asBuffer.length >
+                CONFIG_LWM2M_OBJ_SECURITY_SERVER_PUB_KEY_BUFSIZE) {
+                result = COAP_500_INTERNAL_SERVER_ERROR;
+            }
 
-                /* copy the new value */
-                memcpy(instance->server_pub_key, data->value.asBuffer.buffer,
-                       data->value.asBuffer.length);
+            /* copy the new value */
+            memcpy(instance->server_pub_key, data->value.asBuffer.buffer,
+                   data->value.asBuffer.length);
 
-                /* if the size changed we need to modify the registered credential */
-                if (instance->server_pub_key_len != data->value.asBuffer.length) {
-                    instance->server_pub_key_len = data->value.asBuffer.length;
-                    _update_credential(instance);
-                }
+            /* if the size changed we need to modify the registered credential */
+            if (instance->server_pub_key_len != data->value.asBuffer.length) {
+                instance->server_pub_key_len = data->value.asBuffer.length;
+                _update_credential(instance);
+            }
 #endif /* MODULE_WAKAAMA_CLIENT_DTLS */
-                result = COAP_204_CHANGED;
-                break;
+            result = COAP_204_CHANGED;
+            break;
 
-            /* not implemented, ignore for now */
-            case LWM2M_SECURITY_SMS_SECURITY_ID:
-            case LWM2M_SECURITY_SMS_KEY_PARAM_ID:
-            case LWM2M_SECURITY_SMS_SECRET_KEY_ID:
-            case LWM2M_SECURITY_SMS_SERVER_NUMBER_ID:
-                result = COAP_204_CHANGED;
-                break;
+        /* not implemented, ignore for now */
+        case LWM2M_SECURITY_SMS_SECURITY_ID:
+        case LWM2M_SECURITY_SMS_KEY_PARAM_ID:
+        case LWM2M_SECURITY_SMS_SECRET_KEY_ID:
+        case LWM2M_SECURITY_SMS_SERVER_NUMBER_ID:
+            result = COAP_204_CHANGED;
+            break;
 
-            default:
-                DEBUG("[lwm2m:security:write]: unknown resource %d\n", data->id);
-                result = COAP_404_NOT_FOUND;
+        default:
+            DEBUG("[lwm2m:security:write]: unknown resource %d\n", data->id);
+            result = COAP_404_NOT_FOUND;
         }
         i++;
     } while (i < num_data && result == COAP_204_CHANGED);
@@ -648,8 +650,8 @@ out:
     return result;
 }
 
-static uint8_t _delete_cb(lwm2m_context_t * context, uint16_t instance_id,
-                          lwm2m_object_t * object)
+static uint8_t _delete_cb(lwm2m_context_t *context, uint16_t instance_id,
+                          lwm2m_object_t *object)
 {
     (void)context;
     uint8_t result = COAP_404_NOT_FOUND;
@@ -671,7 +673,7 @@ static uint8_t _delete_cb(lwm2m_context_t * context, uint16_t instance_id,
     /* if there is an associated credential, de-register */
     if (instance->cred_tag != CREDMAN_TAG_EMPTY) {
         credman_type_t type = instance->security_mode == LWM2M_SECURITY_MODE_PRE_SHARED_KEY ?
-                                CREDMAN_TYPE_PSK : CREDMAN_TYPE_ECDSA;
+                              CREDMAN_TYPE_PSK : CREDMAN_TYPE_ECDSA;
         credman_delete(instance->cred_tag, type);
         lwm2m_client_remove_credential(instance->cred_tag);
     }
@@ -679,7 +681,7 @@ static uint8_t _delete_cb(lwm2m_context_t * context, uint16_t instance_id,
 
     /* add instance to free instances list */
     instance->list.id = UINT16_MAX;
-    _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *) LWM2M_LIST_ADD(
+    _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *)LWM2M_LIST_ADD(
         _FREE_INSTANCES(_security_object), instance);
     result = COAP_202_DELETED;
 
@@ -688,8 +690,8 @@ free_out:
     return result;
 }
 
-static uint8_t _create_cb(lwm2m_context_t * context, uint16_t instance_id, int num_data,
-                          lwm2m_data_t * data_array, lwm2m_object_t * object)
+static uint8_t _create_cb(lwm2m_context_t *context, uint16_t instance_id, int num_data,
+                          lwm2m_data_t *data_array, lwm2m_object_t *object)
 {
     (void)context;
 
@@ -706,11 +708,11 @@ static uint8_t _create_cb(lwm2m_context_t * context, uint16_t instance_id, int n
     }
 
     /* try to allocate an instance, by popping a free node from the list */
-    _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *) lwm2m_list_remove(
-        (lwm2m_list_t *) _FREE_INSTANCES(_security_object),
+    _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *)lwm2m_list_remove(
+        (lwm2m_list_t *)_FREE_INSTANCES(_security_object),
         UINT16_MAX,
-        (lwm2m_list_t **) &instance
-    );
+        (lwm2m_list_t **)&instance
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:security:create] can't allocate free instance\n");
@@ -729,10 +731,11 @@ static uint8_t _create_cb(lwm2m_context_t * context, uint16_t instance_id, int n
     object->instanceList = LWM2M_LIST_ADD(object->instanceList, instance);
 
     /* write incoming data to the instance */
-    result = _write_cb(context, instance_id, num_data, data_array, object,LWM2M_WRITE_PARTIAL_UPDATE);
+    result = _write_cb(context, instance_id, num_data, data_array, object,
+                       LWM2M_WRITE_PARTIAL_UPDATE);
 
     if (result != COAP_204_CHANGED) {
-        _delete_cb(context,instance_id, object);
+        _delete_cb(context, instance_id, object);
     }
     else {
         result = COAP_201_CREATED;
@@ -751,7 +754,7 @@ lwm2m_object_t *lwm2m_object_security_init(lwm2m_client_data_t *client_data)
         _security_object.instances[i].list.next = NULL;
         _security_object.instances[i].list.id = UINT16_MAX;
 
-        _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *) LWM2M_LIST_ADD(
+        _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *)LWM2M_LIST_ADD(
             _FREE_INSTANCES(_security_object), &(_security_object.instances[i]));
     }
 
@@ -760,7 +763,7 @@ lwm2m_object_t *lwm2m_object_security_init(lwm2m_client_data_t *client_data)
 }
 
 static int _initialize_new_instance(lwm2m_obj_security_inst_t *instance, uint16_t instance_id,
-                             const lwm2m_obj_security_args_t *args)
+                                    const lwm2m_obj_security_args_t *args)
 {
     memset(instance, 0, sizeof(lwm2m_obj_security_inst_t));
 
@@ -875,11 +878,11 @@ int lwm2m_object_security_instance_create(const lwm2m_obj_security_args_t *args,
     }
 
     /* try to allocate an instance, by popping a free node from the list */
-    _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *) lwm2m_list_remove(
-        (lwm2m_list_t *) _FREE_INSTANCES(_security_object),
+    _FREE_INSTANCES(_security_object) = (lwm2m_obj_security_inst_t *)lwm2m_list_remove(
+        (lwm2m_list_t *)_FREE_INSTANCES(_security_object),
         UINT16_MAX,
-        (lwm2m_list_t **) &instance
-    );
+        (lwm2m_list_t **)&instance
+        );
 
     if (!instance) {
         DEBUG("[lwm2m:security]: can't allocate new instance\n");
@@ -918,7 +921,7 @@ credman_tag_t lwm2m_object_security_get_credential(uint16_t instance_id)
 
     return instance->cred_tag;
 #else
-    (void) instance_id;
+    (void)instance_id;
     return CREDMAN_TAG_EMPTY;
 #endif /* MODULE_WAKAAMA_CLIENT_DTLS */
 }
