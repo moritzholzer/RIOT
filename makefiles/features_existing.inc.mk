@@ -170,6 +170,7 @@ FEATURES_EXISTING := \
     periph_gpio_ll_input_pull_keep \
     periph_gpio_ll_input_pull_up \
     periph_gpio_ll_irq \
+    periph_gpio_ll_irq_edge_triggered_both \
     periph_gpio_ll_irq_level_triggered_high \
     periph_gpio_ll_irq_level_triggered_low \
     periph_gpio_ll_irq_unmask \
@@ -180,6 +181,9 @@ FEATURES_EXISTING := \
     periph_gpio_ll_switch_dir \
     periph_gpio_tamper_wake \
     periph_hash_md5 \
+    periph_hash_sha3_256 \
+    periph_hash_sha3_384 \
+    periph_hash_sha3_512 \
     periph_hash_sha_1 \
     periph_hash_sha_224 \
     periph_hash_sha_256 \

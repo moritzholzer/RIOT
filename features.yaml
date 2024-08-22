@@ -534,6 +534,9 @@ groups:
         help: Level triggered IRQs are supported for level high.
       - name: periph_gpio_ll_irq_level_triggered_low
         help: Level triggered IRQs are supported for level low.
+      - name: periph_gpio_ll_irq_edge_triggered_both
+        help: Edge triggered IRQs are supported with both falling and rising
+              edges as trigger
       - name: periph_gpio_ll_irq_unmask
         help: The GPIO LL driver supports unmasking interrupts without
               clearing pending IRQs that came in while masked.
@@ -564,9 +567,9 @@ groups:
         help: The GPIO LL driver allows switching the direction between input
               and (push-pull) output in an efficient manner. The main use case
               is bit-banging bidirectional protocols when open-drain / open-source
-              mode is not supported. GPIO LL drivers for peripherals that do
-              support open drain mode typically do not bother implementing this,
-              even if the hardware would allow it.
+              mode is not supported. Another use case is controlling GPIOs
+              at high speed with three output states (high, low, high impedance),
+              as e.g. needed for Charlieplexing
 
   - title: Serial Interfaces
     help: Features related to serial interfaces
@@ -839,6 +842,12 @@ groups:
       help: SHA-512/224 hardware acceleration present.
     - name: periph_hash_sha_512_256
       help: SHA-512/256 hardware acceleration present.
+    - name: periph_hash_sha3_256
+      help: SHA-3/256 hardware acceleration present.
+    - name: periph_hash_sha3_384
+      help: SHA-3/384 hardware acceleration present.
+    - name: periph_hash_sha3_512
+      help: SHA-3/512 hardware acceleration present.
     - name: periph_hmac_sha_256
       help: HMAC SHA-256 hardware acceleration present.
     - name: periph_hwrng

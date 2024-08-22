@@ -66,7 +66,7 @@ static ssize_t _well_known_core_handler(coap_pkt_t* pdu, uint8_t *buf, size_t le
                                         coap_request_ctx_t *ctx);
 static void _cease_retransmission(gcoap_request_memo_t *memo);
 static size_t _handle_req(gcoap_socket_t *sock, coap_pkt_t *pdu, uint8_t *buf,
-                          size_t len, sock_udp_ep_t *remote);
+                          size_t len, sock_udp_ep_t *remote, sock_udp_aux_tx_t *aux);
 static void _expire_request(gcoap_request_memo_t *memo);
 static gcoap_request_memo_t* _find_req_memo_by_mid(const sock_udp_ep_t *remote,
                                                    uint16_t mid);
@@ -453,7 +453,7 @@ static void _process_coap_pdu(gcoap_socket_t *sock, sock_udp_ep_t *remote, sock_
                                          COAP_CODE_REQUEST_ENTITY_TOO_LARGE);
             } else {
                 pdu_len = _handle_req(sock, &pdu, _listen_buf,
-                                      sizeof(_listen_buf), remote);
+                                      sizeof(_listen_buf), remote, aux);
             }
 
             if (pdu_len > 0) {
@@ -652,7 +652,7 @@ static void _cease_retransmission(gcoap_request_memo_t *memo) {
  * return length of response pdu, or < 0 if can't handle
  */
 static size_t _handle_req(gcoap_socket_t *sock, coap_pkt_t *pdu, uint8_t *buf,
-                          size_t len, sock_udp_ep_t *remote)
+                          size_t len, sock_udp_ep_t *remote, sock_udp_aux_tx_t *aux)
 {
     const coap_resource_t *resource     = NULL;
     gcoap_listener_t *listener          = NULL;
@@ -760,6 +760,7 @@ static size_t _handle_req(gcoap_socket_t *sock, coap_pkt_t *pdu, uint8_t *buf,
         .resource = resource,
         .tl_type = (uint32_t)sock->type,
         .remote = remote,
+        .local = aux ? &aux->local : NULL,
     };
 
     pdu_len = resource->handler(pdu, buf, len, &ctx);
@@ -1496,7 +1497,7 @@ kernel_pid_t gcoap_init(void)
         return -EEXIST;
     }
     _pid = thread_create(_msg_stack, sizeof(_msg_stack), THREAD_PRIORITY_MAIN - 1,
-                            THREAD_CREATE_STACKTEST, _event_loop, NULL, "coap");
+                            0, _event_loop, NULL, "coap");
 
     mutex_init(&_coap_state.lock);
     /* Blank lists so we know if an entry is available. */
@@ -1613,7 +1614,7 @@ int gcoap_obs_req_forget(const sock_udp_ep_t *remote, const uint8_t *token,
 }
 
 ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
-                       const sock_udp_ep_t *remote,
+                       const sock_udp_ep_t *remote, const sock_udp_ep_t *local,
                        gcoap_resp_handler_t resp_handler, void *context,
                        gcoap_socket_type_t tl_type)
 {
@@ -1657,6 +1658,9 @@ ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
             ssize_t res = _cache_check(buf, len, memo, &cache_hit);
 
             if (res < 0) {
+                DEBUG("gcoap: Error from cache check");
+                memo->state = GCOAP_MEMO_UNUSED;
+                mutex_unlock(&_coap_state.lock);
                 return res;
             }
             len = res;
@@ -1664,13 +1668,22 @@ ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
 
         switch (msg_type) {
         case COAP_TYPE_CON:
+            /* Can't store it for retransmission, even though sending it from
+             * the provided buffer once is possible */
+            if (len > CONFIG_GCOAP_PDU_BUF_SIZE) {
+                DEBUG("gcoap: Request too large for retransmit buffer");
+                memo->state = GCOAP_MEMO_UNUSED;
+                mutex_unlock(&_coap_state.lock);
+                return -EINVAL;
+            }
+
             /* copy buf to resend_bufs record */
             memo->msg.data.pdu_buf = NULL;
             for (int i = 0; i < CONFIG_GCOAP_RESEND_BUFS_MAX; i++) {
                 if (!_coap_state.resend_bufs[i][0]) {
                     memo->msg.data.pdu_buf = &_coap_state.resend_bufs[i][0];
                     memcpy(memo->msg.data.pdu_buf, buf,
-                           CONFIG_GCOAP_PDU_BUF_SIZE);
+                           len);
                     memo->msg.data.pdu_len = len;
                     break;
                 }
@@ -1743,7 +1756,12 @@ ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
     }
 
     if (res == 0) {
-        res = _tl_send(&socket, buf, len, remote, NULL);
+        sock_udp_aux_tx_t aux = { 0 };
+        if (local) {
+            memcpy(&aux.local, local, sizeof(sock_udp_ep_t));
+            aux.flags = SOCK_AUX_SET_LOCAL;
+        }
+        res = _tl_send(&socket, buf, len, remote, &aux);
     }
     if (res <= 0) {
         if (memo != NULL) {
