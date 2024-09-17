@@ -148,7 +148,13 @@ In addition to the Rust compiler you'll need to install the C2Rust transpiler;
 as this is using some recent fixes, it is best installed as:
 
 ```shell
-$ cargo install c2rust --git https://github.com/immunant/c2rust
+$ cargo install c2rust --git https://github.com/immunant/c2rust --tag v0.19.0
+```
+
+If multiple versions of LLVM are installed locally, it may be necessary to prefix it with the selected LLVM version:
+
+```
+$ LLVM_CONFIG_PATH=/usr/bin/llvm-config-16 cargo install …
 ```
 
 [cargo]: https://doc.rust-lang.org/cargo/

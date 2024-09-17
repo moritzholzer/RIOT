@@ -1,8 +1,12 @@
 # This *MUST* be updated in lock-step with the riotbuild image in
 # https://github.com/RIOT-OS/riotdocker. The idea is that when checking out
 # a random RIOT merge commit, `make BUILD_IN_DOCKER=1` should always succeed.
-DOCKER_TESTED_IMAGE_ID := f5951bc41dfface6cac869181d703e62cbdd3b7976b0946130a38f2e658000b3
-DOCKER_TESTED_IMAGE_REPO_DIGEST := 75dec511ba26424987a26bdee5ac2f94d5f4928d79b627d1620b9d2391aab3e1
+#
+# When the docker image is updated, checks at
+# dist/tools/buildsystem_sanity_check/check.sh start complaining in CI, and
+# provide the latest values to verify and fill in.
+DOCKER_TESTED_IMAGE_ID := 488d97b1b8285ca6a9518f177126fc5ab077135648ef40c1ac7867d16ac2d640
+DOCKER_TESTED_IMAGE_REPO_DIGEST := beb980f9ef00e7143fba913f3cb927866f987fe570141e145539c42141a940bd
 
 DOCKER_PULL_IDENTIFIER := docker.io/riot/riotbuild@sha256:$(DOCKER_TESTED_IMAGE_REPO_DIGEST)
 DOCKER_IMAGE_DEFAULT := sha256:$(DOCKER_TESTED_IMAGE_ID)

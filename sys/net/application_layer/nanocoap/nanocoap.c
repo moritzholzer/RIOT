@@ -184,7 +184,7 @@ int coap_parse(coap_pkt_t *pkt, uint8_t *buf, size_t len)
     return 0;
 }
 
-int coap_match_path(const coap_resource_t *resource, uint8_t *uri)
+int coap_match_path(const coap_resource_t *resource, const uint8_t *uri)
 {
     assert(resource && uri);
     int res;
@@ -1338,6 +1338,11 @@ bool coap_block_finish(coap_block_slicer_t *slicer, uint16_t option)
     bool more = slicer->cur > slicer->end;
     uint32_t blkopt = _slicer2blkopt(slicer, more);
     size_t olen = _encode_uint(&blkopt);
+
+    /* ensure that we overwrite the dummy value set by coap_block2_init() */
+    if (!olen) {
+        olen = 1;
+    }
 
     coap_put_option(slicer->opt, option - delta, option, (uint8_t *)&blkopt, olen);
     return more;
