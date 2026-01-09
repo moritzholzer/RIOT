@@ -244,6 +244,7 @@ PSEUDOMODULES += gnrc_sock_check_reuse
 PSEUDOMODULES += gnrc_txtsnd
 PSEUDOMODULES += ieee802154_security
 PSEUDOMODULES += ieee802154_submac
+PSEUDOMODULES += ieee802154_mac
 PSEUDOMODULES += ipv4
 PSEUDOMODULES += ipv6
 PSEUDOMODULES += l2filter_blacklist
