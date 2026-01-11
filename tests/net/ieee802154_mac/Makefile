@@ -9,6 +9,7 @@ USEMODULE += netdev_default
 USEMODULE += luid
 USEMODULE += l2util
 USEMODULE += eui_provider
+USEMODULE += isrpipe_read_timeout
 USEMODULE += ieee802154
 USEMODULE += ieee802154_mac
 USEMODULE += ieee802154_submac
