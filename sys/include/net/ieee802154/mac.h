@@ -9,6 +9,7 @@ extern "C" {
 #include <stdbool.h>
 #include "assert.h"
 #include "net/ieee802154.h"
+#include "net/ieee802154/submac.h"
 
 typedef struct ieee802154_pib_t {
     bool AOA_ENABLE;
@@ -47,6 +48,8 @@ typedef struct ieee802154_pib_t {
     bool TIMESTAMP_SUPPORTED;
     uint16_t TRANSACTION_PERSISTENCE_TIME;
     uint16_t UNIT_BACKOFF_PERIOD;
+
+    ieee802154_submac_t submac;
 } ieee802154_pib_t;
 
 typedef enum {
@@ -101,6 +104,15 @@ typedef enum {
     IEEE802154_PIB_ERR_SIZE     = -5
 } ieee802154_pib_res_t;
 
+typedef enum {
+    IEEE802154_DEV_TYPE_CC2538_RF,
+    IEEE802154_DEV_TYPE_NRF802154,
+    IEEE802154_DEV_TYPE_SOCKET_ZEP,
+    IEEE802154_DEV_TYPE_KW2XRF,
+    IEEE802154_DEV_TYPE_MRF24J40,
+    IEEE802154_DEV_TYPE_ESP_IEEE802154,
+} ieee802154_dev_type_t;
+
 typedef struct {
     ieee802154_pib_type_t type;
     union {
@@ -113,11 +125,11 @@ typedef struct {
     } v;
 } ieee802154_pib_value_t;
 
-void ieee802154_pib_init(ieee802154_pib_t *pib);
+int ieee802154_pib_init(ieee802154_pib_t *pib);
 int ieee802154_mac_mlme_scan(void);
 ieee802154_pib_res_t ieee802154_mac_mlme_set(ieee802154_pib_t *pib, ieee802154_pib_attr_t pib_attr, const ieee802154_pib_value_t *pib_attr_value);
 ieee802154_pib_res_t ieee802154_mac_mlme_get(const ieee802154_pib_t *pib, ieee802154_pib_attr_t pib_attr, ieee802154_pib_value_t *pib_attr_value);
-//int ieee802154_mac_mlme_start(uint16_t pan_id, );
+int ieee802154_mac_mlme_start(ieee802154_pib_t *pib, uint16_t channel);
 int ieee802154_mac_mlme_associate(void);
 int ieee802154_mac_mlme_poll(void);
 int ieee802154_mac_mcps_data(void);
