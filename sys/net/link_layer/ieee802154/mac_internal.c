@@ -8,8 +8,8 @@
 
 #include "net/ieee802154/mac_internal.h"
 #include "net/ieee802154/mac.h"
-
-void ieee802154_mac_post_ev(ieee802154_mac_t *mac, ieee802154_mac_ev_t ev)
+                         
+void ieee802154_mac_post_event(ieee802154_mac_t *mac, ieee802154_mac_ev_t ev)
 {
     isrpipe_write_one(&mac->evpipe, (uint8_t)ev);
 }
@@ -28,7 +28,7 @@ static void _radio_cb(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
             return;
     }
 
-    ieee802154_mac_post_ev(mac, ev);
+    ieee802154_mac_post_event(mac, ev);
 }
 
 void ieee802154_mac_radio_attach(ieee802154_mac_t *mac)
@@ -39,13 +39,13 @@ void ieee802154_mac_radio_attach(ieee802154_mac_t *mac)
 /* ----- ACK timer callback: enqueue event only ----- */
 static void _ack_timer_cb(void *arg){
     ieee802154_mac_t *mac = (ieee802154_mac_t *)arg;
-    ieee802154_mac_post_ev(mac, IEEE802154_MAC_EV_ACK_TIMEOUT);
+    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_ACK_TIMEOUT);
 }
 
 /* ===== Required SubMAC extern hooks ===== */
 void ieee802154_submac_bh_request(ieee802154_submac_t *submac){
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
-    ieee802154_mac_post_ev(mac, IEEE802154_MAC_EV_SUBMAC_BH);
+    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_SUBMAC_BH);
 }
 
 void ieee802154_submac_ack_timer_set(ieee802154_submac_t *submac)
@@ -96,7 +96,7 @@ static void _submac_tx_done(ieee802154_submac_t *submac, int status, ieee802154_
     ieee802154_mac_tx_finish_current(mac, res);
 
     /* start next if queued */
-    ieee802154_mac_post_ev(mac, IEEE802154_MAC_EV_TX_KICK);
+    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_TX_KICK);
 }
 
 static const ieee802154_submac_cb_t _submac_cbs = {
@@ -116,37 +116,6 @@ static inline bool _txq_empty(const ieee802154_mac_t *mac){
     return mac->tx_cnt == 0;
 }
 
-/* Optional helper you can call from your mcps_data_request() later */
-int ieee802154_mac_tx_enqueue_borrowed(ieee802154_mac_t *mac,
-                                       uint8_t handle,
-                                       const uint8_t *mhr, uint8_t mhr_len,
-                                       ieee802154_octets_t msdu)
-{
-    if (_txq_full(mac)) {
-        return -ENOBUFS;
-    }
-    if (mhr_len > IEEE802154_MAX_HDR_LEN) {
-        return -EINVAL;
-    }
-
-    ieee802154_mac_tx_desc_t *d = &mac->tx_queue[mac->tx_tail];
-    memset(d, 0, sizeof(*d));
-    d->in_use = true;
-    d->handle = handle;
-
-    memcpy(d->mhr, mhr, mhr_len);
-    d->mhr_len = mhr_len;
-
-    d->msdu = msdu;
-
-    mac->tx_tail = (uint8_t)((mac->tx_tail + 1) % IEEE802154_MAC_TXQ_LEN);
-    mac->tx_cnt++;
-
-    /* ask MAC thread to try starting it */
-    ieee802154_mac_post_ev(mac, IEEE802154_MAC_EV_TX_KICK);
-    return 0;
-}
-
 void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status)
 {
     if (_txq_empty(mac)) {
@@ -154,25 +123,24 @@ void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status)
         return;
     }
 
-    ieee802154_mac_tx_desc_t *d = &mac->tx_queue[mac->tx_head];
+    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(mac);
 
     if (mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.arg, d->handle, status);
     }
 
     d->in_use = false;
-    mac->tx_head = (uint8_t)((mac->tx_head + 1) % IEEE802154_MAC_TXQ_LEN);
-    mac->tx_cnt--;
+    ieee802154_mac_tx_pop(mac);
     mac->tx_busy = false;
 }
 
-void ieee802154_mac_tx_kick(ieee802154_mac_t *mac)
+void _tx_kick(ieee802154_mac_t *mac)
 {
     if (mac->tx_busy || _txq_empty(mac)) {
         return;
     }
 
-    ieee802154_mac_tx_desc_t *d = &mac->tx_queue[mac->tx_head];
+    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(mac);
 
     /* persistent iolist nodes */
     d->iol_msdu.iol_base = (void *)d->msdu.ptr;
@@ -191,11 +159,11 @@ void ieee802154_mac_tx_kick(ieee802154_mac_t *mac)
         /* immediate failure: confirm + pop */
         ieee802154_mac_tx_finish_current(mac, r);
         /* and try next (in case next can send) */
-        ieee802154_mac_tx_kick(mac);
+        _tx_kick(mac);
     }
 }
 
-void ieee802154_mac_process_event(ieee802154_mac_t *mac, uint8_t ev)
+void _process_event(ieee802154_mac_t *mac, uint8_t ev)
 {
     switch ((ieee802154_mac_ev_t)ev) {
         case IEEE802154_MAC_EV_RADIO_TX_DONE:
@@ -221,7 +189,7 @@ void ieee802154_mac_process_event(ieee802154_mac_t *mac, uint8_t ev)
 
         case IEEE802154_MAC_EV_TX_KICK:
             puts("sending");
-            ieee802154_mac_tx_kick(mac);
+            _tx_kick(mac);
             break;
 
         default:
@@ -267,11 +235,11 @@ void *ieee802154_mac_thread(void *arg)
         int n = isrpipe_read(&mac->evpipe, &ev, 1);
         if (n == 1) {
             puts("event\n");
-            ieee802154_mac_process_event(mac, ev);
+            _process_event(mac, ev);
         }
         /* read rest */
         while (isrpipe_read_timeout(&mac->evpipe, &ev, 1, 0) == 1) {
-            ieee802154_mac_process_event(mac, ev);
+            _process_event(mac, ev);
         }
     }
 

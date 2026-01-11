@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 #ifndef IEEE802154_MAC_EVPIPE_LEN
-#define IEEE802154_MAC_EVPIPE_LEN (16U) /* bytes */
+#define IEEE802154_MAC_EVPIPE_LEN (16U)
 #endif
 
 #ifndef IEEE802154_MAC_STACKSIZE
@@ -34,31 +34,37 @@ extern "C" {
 #ifndef IEEE802154_MAC_PRIO
 #define IEEE802154_MAC_PRIO      (THREAD_PRIORITY_MAIN - 1)
 #endif
-
+/**
+ * @brief IEEE 802.15.4 extended adress
+ */
 typedef eui64_t ieee802154_ext_addr_t;
+/**
+ * @brief IEEE 802.15.4 MAC short address
+ */
 typedef network_uint16_t ieee802154_short_addr_t;
 
+/**
+ * @brief IEEE 802.15.4 octet (bytes) with len.
+ */
 typedef struct {
     const uint8_t *ptr;
     size_t len;
 } ieee802154_octets_t;
 
+/**
+ * @brief IEEE 802.15.4 MAC PIB.
+ */
 typedef struct ieee802154_pib_t {
     bool AOA_ENABLE;
     bool AUTO_REQUEST;
     bool BATT_LIFE_EXT;
     uint16_t BATT_LIFE_EXT_PERIODS;
     uint8_t BEACON_ORDER;
-
     ieee802154_octets_t BEACON_PAYLOAD;
-
     uint8_t BSN;
-
     ieee802154_ext_addr_t COORD_EXTENDED_ADDRESS;
     ieee802154_short_addr_t COORD_SHORT_ADDRESS;
-
     uint8_t DSN;
-
     eui64_t EXTENDED_ADDRESS;
     uint8_t FCS_TYPE;
     bool GROUP_RX_MODE;
@@ -81,6 +87,9 @@ typedef struct ieee802154_pib_t {
     uint16_t UNIT_BACKOFF_PERIOD;
 } ieee802154_pib_t;
 
+/**
+ * @brief IEEE 802.15.4 MAC PIB Attributes.
+ */
 typedef enum {
     IEEE802154_PIB_AOA_ENABLE,
     IEEE802154_PIB_AUTO_REQUEST,
@@ -115,13 +124,16 @@ typedef enum {
     IEEE802154_PIB_ATTR_COUNT
 } ieee802154_pib_attr_t;
 
+/**
+ * @brief IEEE 802.15.4 MAC PIB data types.
+ */
 typedef enum {
-    IEEE802154_PIB_TYPE_BOOL,
-    IEEE802154_PIB_TYPE_U8,
-    IEEE802154_PIB_TYPE_U16,
-    IEEE802154_PIB_TYPE_EUI64,
-    IEEE802154_PIB_TYPE_NUI16,
-    IEEE802154_PIB_TYPE_BYTES
+    IEEE802154_PIB_TYPE_BOOL,   /**< bool */
+    IEEE802154_PIB_TYPE_U8,     /**< uint8_t */
+    IEEE802154_PIB_TYPE_U16,    /**< uint16_t */
+    IEEE802154_PIB_TYPE_EUI64,  /**< ext address in ieee802154_ext_addr_t */
+    IEEE802154_PIB_TYPE_NUI16,  /**< short address in ieee802154_short_addr_t */
+    IEEE802154_PIB_TYPE_BYTES   /**< octets in  ieee802154_octets_t*/
 } ieee802154_pib_type_t;
 
 typedef enum {
@@ -168,71 +180,64 @@ typedef struct {
     } v;
 } ieee802154_pib_value_t;
 
-typedef enum {
-    IEEE802154_MAC_EV_RADIO_TX_DONE = 1,
-    IEEE802154_MAC_EV_RADIO_RX_DONE = 2,
-    IEEE802154_MAC_EV_RADIO_CRC_ERR = 3,
-    IEEE802154_MAC_EV_SUBMAC_BH     = 4,
-    IEEE802154_MAC_EV_ACK_TIMEOUT   = 5,
-    IEEE802154_MAC_EV_TX_KICK       = 6,
-} ieee802154_mac_ev_t;
-
+/**
+ * @brief IEEE 802.15.4 MAC MCPS-DATA.confirm callback.
+ */
 typedef void (*ieee802154_mcps_data_confirm_cb_t)(void *arg, uint8_t handle, int status);
+/**
+ * @brief IEEE 802.15.4 MAC MCPS-DATA.indication callback.
+ */
 typedef void (*ieee802154_mcps_data_indication_cb_t)(void *arg,
                                                     const uint8_t *psdu, size_t len,
                                                     const ieee802154_rx_info_t *info);
-
+/**
+ * @brief IEEE 802.15.4 SubMAC callbacks.
+ */
 typedef struct {
-    ieee802154_mcps_data_confirm_cb_t data_confirm;
-    ieee802154_mcps_data_indication_cb_t data_indication;
+    ieee802154_mcps_data_confirm_cb_t data_confirm;         /**< MCPS-DATA.confirm callback*/
+    ieee802154_mcps_data_indication_cb_t data_indication;   /**< MCPS-DATA.indication callback*/
     void *arg;
 } ieee802154_mac_cbs_t;
 
 typedef struct {
-    bool in_use;
-    uint8_t handle;
-
-    /* persistent header storage */
-    uint8_t mhr[IEEE802154_MAX_HDR_LEN];
+    bool in_use;                            /**< wheather ring buffer element is in use */        
+    uint8_t handle;                         /**< the MSDU handle */
+    uint8_t mhr[IEEE802154_MAX_HDR_LEN];    /* persistent header storage */              
     uint8_t mhr_len;
-
-    /* persistent iolist nodes (must live until TX done) */
-    iolist_t iol_mhr;
-    iolist_t iol_msdu;
-
-    /* borrowed payload (Option A) */
+    iolist_t iol_mhr;                       /* persistent iolist nodes */
+    iolist_t iol_msdu;                      /* persistent iolist nodes */
     ieee802154_octets_t msdu;
 } ieee802154_mac_tx_desc_t;
 
+/**
+ * @brief IEEE 802.15.4 SubMAC descriptor
+ */
 typedef struct {
-    ieee802154_pib_t pib;
-    ieee802154_submac_t submac;
-    ieee802154_mac_cbs_t cbs;
-
-    kernel_pid_t pid;
-    char stack[IEEE802154_MAC_STACKSIZE];
-
-    /* ISR->thread event pipe */
-    isrpipe_t evpipe;
-    uint8_t evpipe_buf[IEEE802154_MAC_EVPIPE_LEN];
-
-    /* ACK timeout timer (SubMAC hook) */
-    ztimer_t ack_timer;
-
-    /* RX scratch buffer */
-    uint8_t rx_buf[127];
-
-    /* TX ring */
-    ieee802154_mac_tx_desc_t tx_queue[IEEE802154_MAC_TXQ_LEN];
-    uint8_t tx_head;
-    uint8_t tx_tail;
-    uint8_t tx_cnt;
-    bool tx_busy;
+    ieee802154_pib_t pib;                                       /**< PIB of the MAC */
+    ieee802154_submac_t submac;                                 /**< SubMAC descriptor */
+    ieee802154_mac_cbs_t cbs;                                   /**< callbacks for the SubMAC */
+    kernel_pid_t pid;                                           /**< pid of MAC thread */
+    char stack[IEEE802154_MAC_STACKSIZE];                       /**< stack size of the mac thread */
+    isrpipe_t evpipe;                                           /**< event pipe for the submac ISR */
+    uint8_t evpipe_buf[IEEE802154_MAC_EVPIPE_LEN];              /**< buffer of the event pipe */
+    ztimer_t ack_timer;                                         /**< timer for ACK timeout */
+    uint8_t rx_buf[127];                                        /**< receiving buf */
+    ieee802154_mac_tx_desc_t tx_queue[IEEE802154_MAC_TXQ_LEN];  /**< outgoing queue */
+    uint8_t tx_head;                                            /**<  outgoing queue head */
+    uint8_t tx_tail;                                            /**<  outgoing queue tail */
+    uint8_t tx_cnt;                                             /**<  outgoing queue count*/
+    bool tx_busy;                                               /**<  whether device is busy sending */
 } ieee802154_mac_t;
 
+/**
+ * @brief Init the IEEE 802.15.4 MAC 
+ */
 int ieee802154_mac_init(ieee802154_mac_t *mac,
                         const ieee802154_mac_cbs_t *cbs);
 
+/**
+ * @brief Starts the IEEE 802.15.4 MAC
+ */
 int ieee802154_mac_start(ieee802154_mac_t *mac);
 
 int ieee802154_mac_mlme_scan(void);

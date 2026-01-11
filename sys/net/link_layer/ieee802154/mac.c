@@ -610,23 +610,23 @@ int ieee802154_mac_init(ieee802154_mac_t *mac,
     memset(mac, 0, sizeof(*mac));
     mac->cbs = *cbs;
     for (unsigned i = 0; i < (unsigned)IEEE802154_PIB_ATTR_COUNT; i++) {
-        const ieee802154_pib_attr_entry_t *e = &ieee802154_pib_attr[i];
+        const ieee802154_pib_attr_entry_t *attr_entry = &ieee802154_pib_attr[i];
 
-        if (e->def.type != e->type) {
+        if (attr_entry->def.type != attr_entry->type) {
             continue;
         }
 
-        (void)ieee802154_mac_mlme_set(mac, i, &e->def);
+        (void)ieee802154_mac_mlme_set(mac, i, &attr_entry->def);
     }
 
-    ieee802154_pib_value_t v;
+    ieee802154_pib_value_t pib_value;
 
-    v.type = IEEE802154_PIB_TYPE_U8;
-    v.v.u8 = rand_u8();
-    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_BSN, &v);
+    pib_value.type = IEEE802154_PIB_TYPE_U8;
+    pib_value.v.u8 = rand_u8();
+    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_BSN, &pib_value);
 
-    v.v.u8 = rand_u8();
-    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &v);
+    pib_value.v.u8 = rand_u8();
+    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &pib_value);
 
     _hal_init_dev(mac, IEEE802154_DEV_TYPE_KW2XRF);
 
@@ -686,11 +686,6 @@ static inline uint8_t _addr_len_from_mode(ieee802154_addr_mode_t mode)
     }
 }
 
-static inline bool _txq_full(const ieee802154_mac_t *mac)
-{
-    return mac->tx_cnt >= IEEE802154_MAC_TXQ_LEN;
-}
-
 int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  ieee802154_addr_mode_t src_mode,
                                  ieee802154_addr_mode_t dst_mode,
@@ -700,38 +695,33 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  uint8_t msdu_handle,
                                  bool ack_req)
 {
-    if (!mac) {
+if (!mac) {
         return -EINVAL;
     }
 
-    /* Validate address modes */
     const uint8_t src_len = _addr_len_from_mode(src_mode);
     const uint8_t dst_len = _addr_len_from_mode(dst_mode);
 
-    if ((dst_len && dst_addr == NULL) || (dst_mode != IEEE802154_ADDR_MODE_NONE && dst_len == 0)) {
+    if ((dst_len && dst_addr == NULL) ||
+        (dst_mode != IEEE802154_ADDR_MODE_NONE && dst_len == 0)) {
         return -EINVAL;
     }
     if (src_mode != IEEE802154_ADDR_MODE_NONE && src_len == 0) {
         return -EINVAL;
     }
 
-    /* No heap: MSDU pointer is borrowed. We must at least validate length. */
-    if (msdu.len > IEEE802154_FRAME_LEN_MAX) { /* 127, but your HAL excludes FCS */
+    if (msdu.len > IEEE802154_FRAME_LEN_MAX) {
         return -EMSGSIZE;
     }
 
-    /* Enqueue into TX ring */
-    if (_txq_full(mac)) {
+    if (ieee802154_mac_tx_full(mac)) {
         return -ENOBUFS;
     }
 
-    ieee802154_mac_tx_desc_t *d = &mac->tx_queue[mac->tx_tail];
-    memset(d, 0, sizeof(*d));
-    d->in_use = true;
-    d->handle = msdu_handle;
-    d->msdu = msdu;
+    ieee802154_mac_tx_desc_t *mac_tx_desc = ieee802154_mac_tx_reserve(mac);
+    mac_tx_desc->handle = msdu_handle;
+    mac_tx_desc->msdu   = msdu;
 
-    /* Determine src pointer based on src_mode */
     const void *src = NULL;
     if (src_mode == IEEE802154_ADDR_MODE_SHORT) {
         src = &mac->submac.short_addr;
@@ -739,45 +729,42 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
     else if (src_mode == IEEE802154_ADDR_MODE_EXTENDED) {
         src = &mac->submac.ext_addr;
     }
-    else { /* NONE */
-        src = NULL;
-    }
 
     le_uint16_t src_pan = byteorder_btols(byteorder_htons(mac->submac.panid));
     le_uint16_t dst_pan = byteorder_btols(byteorder_htons(dst_panid));
 
-    /* Flags */
     uint8_t flags = IEEE802154_FCF_TYPE_DATA;
     if (ack_req) {
         flags |= IEEE802154_FCF_ACK_REQ;
     }
 
     ieee802154_pib_value_t dsn;
-    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_DSN, &dsn);
-    /* Build header into the descriptor’s persistent buffer */
-    printf("src_pan(le)= %02x%02x  dst_pan(le)= %02x%02x\n",
-       src_pan.u8[0], src_pan.u8[1], dst_pan.u8[0], dst_pan.u8[1]);
-
-    int mhr_len = ieee802154_set_frame_hdr(d->mhr,
-                                          src, src_len,
-                                          dst_addr, dst_len,
-                                          src_pan, dst_pan,
-                                          flags,
-                                          dsn.v.u8);
-    if (mhr_len < 0 || mhr_len > (int)sizeof(d->mhr)) {
-        d->in_use = false;
+    int res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_DSN, &dsn);
+    if (res < 0) {
+        mac_tx_desc->in_use = false;
+        return res;
+    }
+    int mhr_len = ieee802154_set_frame_hdr(mac_tx_desc->mhr,
+                                           src, src_len,
+                                           dst_addr, dst_len,
+                                           src_pan, dst_pan,
+                                           flags,
+                                           dsn.v.u8);
+    if (mhr_len < 0 || mhr_len > (int)sizeof(mac_tx_desc->mhr)) {
+        mac_tx_desc->in_use = false;
         return -EINVAL;
     }
-    ieee802154_pib_value_t dsn_new = {.type = IEEE802154_PIB_TYPE_U8, .v.u8 = ++dsn.v.u8};
-    ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
-    d->mhr_len = (uint8_t)mhr_len;
+    mac_tx_desc->mhr_len = (uint8_t)mhr_len;
 
-    /* Commit into ring */
-    mac->tx_tail = (uint8_t)((mac->tx_tail + 1) % IEEE802154_MAC_TXQ_LEN);
-    mac->tx_cnt++;
+    ieee802154_pib_value_t dsn_new = {
+        .type = IEEE802154_PIB_TYPE_U8,
+        .v.u8 = (uint8_t)(dsn.v.u8 + 1),
+    };
+    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
 
-    /* Ask MAC thread to try sending */
-    ieee802154_mac_post_ev(mac, IEEE802154_MAC_EV_TX_KICK);
+    ieee802154_mac_tx_commit(mac);
+
+    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_TX_KICK);
 
     return 0;
 }
