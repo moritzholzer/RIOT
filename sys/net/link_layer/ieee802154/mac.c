@@ -4,8 +4,172 @@
 #include <string.h>
 
 #include "random.h"
+#include "bhp/event.h"
 #include "net/ieee802154/radio.h"
 #include "net/ieee802154/mac.h"
+#include "net/ieee802154/submac.h"
+
+
+#ifdef MODULE_CC2538_RF
+#include "cc2538_rf.h"
+#endif
+
+#ifdef MODULE_ESP_IEEE802154
+#include "esp_ieee802154_hal.h"
+#endif
+
+#ifdef MODULE_NRF802154
+#include "nrf802154.h"
+#endif
+
+#ifdef MODULE_SOCKET_ZEP
+#include "socket_zep.h"
+#include "socket_zep_params.h"
+#else
+#define SOCKET_ZEP_MAX  0
+#endif
+
+#define RADIOS_NUMOF IS_USED(MODULE_CC2538_RF) + \
+                     IS_USED(MODULE_NRF802154) + \
+                     SOCKET_ZEP_MAX + \
+                     IS_USED(MODULE_MRF24J40) + \
+                     IS_USED(MODULE_KW2XRF) + \
+                     IS_USED(MODULE_ESP_IEEE802154)
+
+
+#include "event/thread.h"
+extern void auto_init_event_thread(void);
+
+#ifdef MODULE_KW2XRF
+#include "kw2xrf.h"
+#include "kw2xrf_params.h"
+#define KW2XRF_NUM   ARRAY_SIZE(kw2xrf_params)
+static kw2xrf_t kw2xrf_dev[KW2XRF_NUM];
+static bhp_event_t kw2xrf_bhp[KW2XRF_NUM];
+#endif
+
+#ifdef MODULE_MRF24J40
+#include "mrf24j40.h"
+#include "mrf24j40_params.h"
+#define MRF24J40_NUM    ARRAY_SIZE(mrf24j40_params)
+static mrf24j40_t mrf24j40_dev[MRF24J40_NUM];
+static bhp_event_t mrf24j40_bhp[MRF24J40_NUM];
+#endif
+
+void _hal_init_dev(ieee802154_pib_t *pib, ieee802154_dev_type_t dev_type)
+{
+#if IS_USED(MODULE_EVENT_THREAD)
+    auto_init_event_thread();
+#endif
+
+    ieee802154_dev_t *radio = NULL;
+    bool ok = false;
+
+    (void)radio;
+
+    if (RADIOS_NUMOF == 0) {
+        puts("Radio is either not supported or not present");
+        assert(false);
+    }
+
+    switch (dev_type) {
+
+        case IEEE802154_DEV_TYPE_CC2538_RF:
+#if IS_USED(MODULE_CC2538_RF)
+            if ((radio = cb(IEEE802154_DEV_TYPE_CC2538_RF, opaque))) {
+                cc2538_rf_hal_setup(radio);
+                cc2538_init();
+                ok = true;
+            }
+#else
+            puts("CC2538_RF selected but MODULE_CC2538_RF not compiled in");
+#endif
+            break;
+
+        case IEEE802154_DEV_TYPE_ESP_IEEE802154:
+#if IS_USED(MODULE_ESP_IEEE802154)
+            if ((radio = cb(IEEE802154_DEV_TYPE_ESP_IEEE802154, opaque))) {
+                esp_ieee802154_setup(radio);
+                esp_ieee802154_init();
+                ok = true;
+            }
+#else
+            puts("ESP_IEEE802154 selected but MODULE_ESP_IEEE802154 not compiled in");
+#endif
+            break;
+
+        case IEEE802154_DEV_TYPE_NRF802154:
+#if IS_USED(MODULE_NRF802154)
+            if ((radio = cb(IEEE802154_DEV_TYPE_NRF802154, opaque))) {
+                nrf802154_hal_setup(radio);
+                nrf802154_init();
+                ok = true;
+            }
+#else
+            puts("NRF802154 selected but MODULE_NRF802154 not compiled in");
+#endif
+            break;
+
+        case IEEE802154_DEV_TYPE_KW2XRF:
+#if IS_USED(MODULE_KW2XRF)
+            if ((radio = &pib->submac.dev)) {
+                for (unsigned i = 0; i < KW2XRF_NUM; i++) {
+                    const kw2xrf_params_t *p = &kw2xrf_params[i];
+                    bhp_event_init(&kw2xrf_bhp[i], EVENT_PRIO_HIGHEST,
+                                   &kw2xrf_radio_hal_irq_handler, radio);
+                    kw2xrf_init(&kw2xrf_dev[i], p, radio, bhp_event_isr_cb, &kw2xrf_bhp[i]);
+                    break; /* init one */
+                }
+                ok = true;
+            }
+#else
+            puts("KW2XRF selected but MODULE_KW2XRF not compiled in");
+#endif
+            break;
+
+        case IEEE802154_DEV_TYPE_SOCKET_ZEP:
+#if IS_USED(MODULE_SOCKET_ZEP)
+        {
+            static socket_zep_t _socket_zeps[SOCKET_ZEP_MAX];
+
+            if ((radio = cb(IEEE802154_DEV_TYPE_SOCKET_ZEP, opaque))) {
+                socket_zep_hal_setup(&_socket_zeps[0], radio);
+                socket_zep_setup(&_socket_zeps[0], &socket_zep_params[0]);
+                ok = true;
+            }
+        }
+#else
+            puts("SOCKET_ZEP selected but MODULE_SOCKET_ZEP not compiled in");
+#endif
+            break;
+
+        case IEEE802154_DEV_TYPE_MRF24J40:
+#if IS_USED(MODULE_MRF24J40)
+            if ((radio = cb(IEEE802154_DEV_TYPE_MRF24J40, opaque))) {
+                for (unsigned i = 0; i < MRF24J40_NUM; i++) {
+                    const mrf24j40_params_t *p = &mrf24j40_params[i];
+                    bhp_event_init(&mrf24j40_bhp[i], EVENT_PRIO_HIGHEST,
+                                   &mrf24j40_radio_irq_handler, radio);
+                    mrf24j40_init(&mrf24j40_dev[i], p, radio, bhp_event_isr_cb, &mrf24j40_bhp[i]);
+                    break; /* init one */
+                }
+                ok = true;
+            }
+#else
+            puts("MRF24J40 selected but MODULE_MRF24J40 not compiled in");
+#endif
+            break;
+
+        default:
+            puts("Unknown/invalid radio type");
+            break;
+    }
+
+    if (!ok) {
+        puts("Requested radio type not supported/compiled-in or not present");
+        assert(false);
+    }
+}
 
 typedef enum {
     IEEE802154_PIB_ACC_RW,
@@ -222,7 +386,7 @@ static const ieee802154_pib_attr_entry_t ieee802154_pib_attr[IEEE802154_PIB_ATTR
     [IEEE802154_PIB_PAN_ID] = {
         .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
         .offset = IEEE802154_PIB_OFF(PAN_ID), .size = IEEE802154_PIB_SIZE(PAN_ID), .len_offset = -1,
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF },
+        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFFU},//CONFIG_IEEE802154_DEFAULT_PANID },
         .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
         .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
     },
@@ -360,6 +524,7 @@ static inline bool _pib_can_write(ieee802154_pib_access_t a)
     return (a == IEEE802154_PIB_ACC_RW);
 }
 
+// TODO: check for access but just from the outside not from the init
 ieee802154_pib_res_t ieee802154_mac_mlme_set(ieee802154_pib_t *pib,
                                               ieee802154_pib_attr_t attr,
                                               const ieee802154_pib_value_t *in)
@@ -477,7 +642,12 @@ ieee802154_pib_res_t ieee802154_mac_mlme_get(const ieee802154_pib_t *pib,
     }
 }
 
-void ieee802154_pib_init(ieee802154_pib_t *pib)
+
+int ieee802154_mac_submac_init(ieee802154_pib_t *pib){
+    return ieee802154_submac_init(&(pib->submac), &pib->SHORT_ADDR, &pib->EXTENDED_ADDRESS);
+}
+
+int ieee802154_pib_init(ieee802154_pib_t *pib)
 {
     for (unsigned i = 0; i < (unsigned)IEEE802154_PIB_ATTR_COUNT; i++) {
         const ieee802154_pib_attr_entry_t *e = &ieee802154_pib_attr[i];
@@ -497,4 +667,17 @@ void ieee802154_pib_init(ieee802154_pib_t *pib)
 
     v.v.u8 = rand_u8();
     (void)ieee802154_mac_mlme_set(pib, IEEE802154_PIB_DSN, &v);
+
+    _hal_init_dev(pib, IEEE802154_DEV_TYPE_KW2XRF);
+    int res = ieee802154_mac_submac_init(pib);
+
+    return res;
+}
+
+
+int ieee802154_mac_mlme_start(ieee802154_pib_t *pib, uint16_t channel){
+    int res = 0;
+    res |= ieee802154_set_channel_number(&pib->submac, channel);
+    res |=  ieee802154_set_panid(&pib->submac, &pib->PAN_ID );
+    return res;
 }
