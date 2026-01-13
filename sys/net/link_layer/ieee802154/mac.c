@@ -16,10 +16,8 @@
 #include <string.h>
 
 #include "isrpipe.h"
-#include "net/ieee802154/radio.h"
 #include "net/ieee802154/mac.h"
 #include "net/ieee802154/mac_internal.h"
-#include "net/ieee802154/submac.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"
@@ -35,11 +33,9 @@ int ieee802154_mac_mlme_set_request(ieee802154_mac_t *mac,
     ieee802154_mac_req_t req;
     memset(&req, 0, sizeof(req));
 
-    /* correct request type */
     req.type = IEEE802154_MAC_REQ_MLME_SET;
     req.handle = 0;
 
-    /* correct union member + copy value */
     req.u.set.attr  = attr;
     req.u.set.value = *in;
 
@@ -93,7 +89,7 @@ int ieee802154_mac_start(ieee802154_mac_t *mac)
 
     /* init isrpipe */
     isrpipe_init(&mac->evpipe, mac->evpipe_buf, sizeof(mac->evpipe_buf));
-    
+
     /* init tx ring */
     ieee802154_mac_tx_init(mac);
 
@@ -136,7 +132,7 @@ int ieee802154_mlme_start_request(ieee802154_mac_t *mac,
     /* wake MAC thread to drain requests */
     ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_REQ);
 
-    return 0; /* queued */
+    return 0;
 }
 
 int ieee802154_mcps_data_request(ieee802154_mac_t *mac,

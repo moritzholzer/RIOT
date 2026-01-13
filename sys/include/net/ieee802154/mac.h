@@ -244,15 +244,15 @@ typedef struct {
 
 typedef struct {
     bool in_use;
-    uint16_t len;
+    size_t len;
     uint8_t buf[IEEE802154_MAC_PAYLOAD_MAX];
 } ieee802154_mac_payload_t;
 
 typedef struct {
-    bool in_use;                                /**< wheather ring buffer element is in use */        
+    bool in_use;                                /**< wheather ring buffer element is in use */
     uint8_t handle;                             /**< the MSDU handle */
-    uint8_t mhr[IEEE802154_MAX_HDR_LEN];        /**< persistent header storage */              
-    uint8_t mhr_len;                            /**< len of the header */
+    uint8_t mhr[IEEE802154_MAX_HDR_LEN];        /**< persistent header storage */
+    size_t mhr_len;                            /**< len of the header */
     iolist_t iol_mhr;                           /**< persistent iolist nodes */
     iolist_t iol_msdu;                          /**< persistent iolist nodes */
     ieee802154_mac_payload_t *payload;
@@ -335,7 +335,7 @@ typedef struct {
 } ieee802154_mac_t;
 
 /**
- * @brief Init the IEEE 802.15.4 MAC 
+ * @brief Init the IEEE 802.15.4 MAC
  */
 int ieee802154_mac_init(ieee802154_mac_t *mac,
                         const ieee802154_mac_cbs_t *cbs);

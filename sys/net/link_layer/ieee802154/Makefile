@@ -15,6 +15,7 @@ endif
 ifneq (,$(filter ieee802154_mac,$(USEMODULE)))
 	SRC += mac.c
   SRC += mac_internal.c
+	SRC += mac_pib.c
 endif
 
 include $(RIOTBASE)/Makefile.base

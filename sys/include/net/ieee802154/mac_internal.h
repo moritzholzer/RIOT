@@ -12,8 +12,6 @@
 
 #pragma once
 
-#include "msg.h"
-#include "container.h"
 #include "mutex.h"
 
 #include "net/ieee802154/mac.h"
