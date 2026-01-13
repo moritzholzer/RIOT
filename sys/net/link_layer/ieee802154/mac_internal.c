@@ -10,11 +10,9 @@
  * @author Moritz Holzer <moritz.holzer@haw-hamburg.de>
  */
 
-#include <errno.h>
 #include <string.h>
 
 #include "container.h"
-#include "random.h"
 #include "bhp/event.h"
 #include "isrpipe/read_timeout.h"
 #include "ztimer.h"
@@ -22,6 +20,8 @@
 
 #include "net/ieee802154/mac_internal.h"
 #include "net/ieee802154/mac.h"
+#include "net/ieee802154/mac_pib.h"
+
 
 #define ENABLE_DEBUG 1
 #include "debug.h"
@@ -48,7 +48,7 @@ extern void auto_init_event_thread(void);
 #  define SOCKET_ZEP_MAX  0
 #endif
 
-#define RADIOS_NUMOF IS_USED(MODULE_CC2538_RF) + \
+#define RADIOS_NUM IS_USED(MODULE_CC2538_RF) + \
                      IS_USED(MODULE_NRF802154) + \
                      SOCKET_ZEP_MAX + \
                      IS_USED(MODULE_MRF24J40) + \
@@ -83,7 +83,7 @@ static void _hal_init_dev(ieee802154_mac_t *mac, ieee802154_dev_type_t dev_type)
 
     (void)radio;
 
-    if (RADIOS_NUMOF == 0) {
+    if (RADIOS_NUM == 0) {
         puts("Radio is either not supported or not present");
         assert(false);
     }
@@ -187,456 +187,11 @@ static void _hal_init_dev(ieee802154_mac_t *mac, ieee802154_dev_type_t dev_type)
     }
 }
 
-#define IEEE802154_PIB_OFF(field)   ((uint16_t)offsetof(ieee802154_pib_t, field))
-#define IEEE802154_PIB_SIZE(field)  ((uint16_t)sizeof(((ieee802154_pib_t *)0)->field))
-
-static const ieee802154_pib_attr_entry_t ieee802154_pib_attr[IEEE802154_PIB_ATTR_COUNT] = {
-    [IEEE802154_PIB_AOA_ENABLE] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(AOA_ENABLE), .size = IEEE802154_PIB_SIZE(AOA_ENABLE),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_AUTO_REQUEST] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(AUTO_REQUEST), .size = IEEE802154_PIB_SIZE(AUTO_REQUEST),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_BATT_LIFE_EXT] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(BATT_LIFE_EXT), .size = IEEE802154_PIB_SIZE(BATT_LIFE_EXT),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_BATT_LIFE_EXT_PERIODS] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(BATT_LIFE_EXT_PERIODS),
-        .size = IEEE802154_PIB_SIZE(BATT_LIFE_EXT_PERIODS),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 6 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 41 }
-    },
-
-    [IEEE802154_PIB_BEACON_ORDER] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(BEACON_ORDER), .size = IEEE802154_PIB_SIZE(BEACON_ORDER),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 15 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 15 }
-    },
-
-    [IEEE802154_PIB_BEACON_PAYLOAD] = {
-        .type = IEEE802154_PIB_TYPE_BYTES, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(BEACON_PAYLOAD), .size = IEEE802154_PIB_SIZE(BEACON_PAYLOAD),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BYTES,
-                                         .v.bytes = { .ptr = NULL, .len = 0 } },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BYTES,
-                                         .v.bytes = { .ptr = NULL, .len = 0 } },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BYTES,
-                                         .v.bytes = { .ptr = NULL, .len = 0 } }
-    },
-
-    [IEEE802154_PIB_BSN] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(BSN), .size = IEEE802154_PIB_SIZE(BSN),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0xFF }
-    },
-
-    [IEEE802154_PIB_COORD_EXTENDED_ADDRESS] = {
-        .type = IEEE802154_PIB_TYPE_EUI64, .access = IEEE802154_PIB_ACC_RO,
-        .offset = IEEE802154_PIB_OFF(COORD_EXTENDED_ADDRESS),
-        .size = IEEE802154_PIB_SIZE(COORD_EXTENDED_ADDRESS),
-        .def = { .type = IEEE802154_PIB_TYPE_EUI64,
-                 .v.ext_addr = { .uint8 = { 0, 0, 0, 0, 0, 0, 0, 0 } } },
-        .min = { .type = IEEE802154_PIB_TYPE_EUI64,
-                 .v.ext_addr = { .uint8 = { 0, 0, 0, 0, 0, 0, 0, 0 } } },
-        .max = { .type = IEEE802154_PIB_TYPE_EUI64,
-                 .v.ext_addr = { .uint8 = { 0, 0, 0, 0, 0, 0, 0, 0 } } }
-
-    },
-
-    [IEEE802154_PIB_COORD_SHORT_ADDRESS] = {
-        .type = IEEE802154_PIB_TYPE_NUI16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(COORD_SHORT_ADDRESS),
-        .size = IEEE802154_PIB_SIZE(COORD_SHORT_ADDRESS),
-        .def = { .type = IEEE802154_PIB_TYPE_NUI16,
-                 .v.short_addr = { .u8 = { 0xFF, 0xFF } } },
-        .min = { .type = IEEE802154_PIB_TYPE_NUI16,
-                 .v.short_addr = { .u8 = { 0x00, 0x00 } } },
-        .max = { .type = IEEE802154_PIB_TYPE_NUI16,
-                 .v.short_addr = { .u8 = { 0xFF, 0xFF } } }
-    },
-
-    [IEEE802154_PIB_DSN] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(DSN), .size = IEEE802154_PIB_SIZE(DSN),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 }, // set random in init
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0xFF }
-    },
-
-    [IEEE802154_PIB_EXTENDED_ADDRESS] = {
-        .type = IEEE802154_PIB_TYPE_EUI64, .access = IEEE802154_PIB_ACC_RO,
-        .offset = IEEE802154_PIB_OFF(EXTENDED_ADDRESS),
-        .size = IEEE802154_PIB_SIZE(EXTENDED_ADDRESS),
-        .def = { .type = IEEE802154_PIB_TYPE_EUI64,
-                 .v.ext_addr = { .uint8 = { 0, 0, 0, 0, 0, 0, 0, 0 } } },
-        .min = { .type = IEEE802154_PIB_TYPE_EUI64,
-                 .v.ext_addr = { .uint8 = { 0, 0, 0, 0, 0, 0, 0, 0 } } },
-        .max = { .type = IEEE802154_PIB_TYPE_EUI64,
-                 .v.ext_addr = { .uint8 = { 0, 0, 0, 0, 0, 0, 0, 0 } } }
-    },
-
-    [IEEE802154_PIB_FCS_TYPE] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(FCS_TYPE), .size = IEEE802154_PIB_SIZE(FCS_TYPE),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 1 }
-    },
-
-    [IEEE802154_PIB_GROUP_RX_MODE] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(GROUP_RX_MODE), .size = IEEE802154_PIB_SIZE(GROUP_RX_MODE),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-
-    },
-
-    [IEEE802154_PIB_GTS_PERMIT] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(GTS_PERMIT), .size = IEEE802154_PIB_SIZE(GTS_PERMIT),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_IMPLICIT_BROADCAST] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(IMPLICIT_BROADCAST),
-        .size = IEEE802154_PIB_SIZE(IMPLICIT_BROADCAST),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_LIFS_PERIOD] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(LIFS_PERIOD), .size = IEEE802154_PIB_SIZE(LIFS_PERIOD),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0x0 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
-    },
-
-    [IEEE802154_PIB_MAX_BE] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(MAX_BE), .size = IEEE802154_PIB_SIZE(MAX_BE),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 5 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 3 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 8 }
-    },
-
-    [IEEE802154_PIB_MAX_CSMA_BACKOFFS] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(MAX_CSMA_BACKOFFS),
-        .size = IEEE802154_PIB_SIZE(MAX_CSMA_BACKOFFS),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 4 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 5 }
-    },
-
-    [IEEE802154_PIB_NOTIFY_ALL_BEACONS] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(NOTIFY_ALL_BEACONS),
-        .size = IEEE802154_PIB_SIZE(NOTIFY_ALL_BEACONS),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_MIN_BE] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(MIN_BE), .size = IEEE802154_PIB_SIZE(MIN_BE),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 3 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 8 }
-    },
-
-    [IEEE802154_PIB_PAN_ID] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(PAN_ID), .size = IEEE802154_PIB_SIZE(PAN_ID),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFFU},//CONFIG_IEEE802154_DEFAULT_PANID },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
-    },
-
-    [IEEE802154_PIB_RESPONSE_WAIT_TIME] = {
-        .type = IEEE802154_PIB_TYPE_U8, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(RESPONSE_WAIT_TIME),
-        .size = IEEE802154_PIB_SIZE(RESPONSE_WAIT_TIME),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 32 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 2 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U8, .v.u8 = 64 }
-    },
-
-    [IEEE802154_PIB_RX_ON_WHEN_IDLE] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(RX_ON_WHEN_IDLE), .size = IEEE802154_PIB_SIZE(RX_ON_WHEN_IDLE),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_SECURITY_ENABLED] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(SECURITY_ENABLED),
-        .size = IEEE802154_PIB_SIZE(SECURITY_ENABLED),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_SHORT_ADDR] = {
-        .type = IEEE802154_PIB_TYPE_NUI16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(SHORT_ADDR), .size = IEEE802154_PIB_SIZE(SHORT_ADDR),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_NUI16,
-                                         .v.short_addr = { .u8 = { 0xFF, 0xFF } } },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_NUI16,
-                                         .v.short_addr = { .u8 = { 0x00, 0x00 } } },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_NUI16,
-                                         .v.short_addr = { .u8 = { 0xFF, 0xFF } } }
-    },
-
-    [IEEE802154_PIB_SIFS_PERIOD] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(SIFS_PERIOD), .size = IEEE802154_PIB_SIZE(SIFS_PERIOD),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0x0 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
-    },
-
-    [IEEE802154_PIB_SYNC_SYMBOL_OFFSET] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(SYNC_SYMBOL_OFFSET),
-        .size = IEEE802154_PIB_SIZE(SYNC_SYMBOL_OFFSET),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0x0 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
-    },
-
-    [IEEE802154_PIB_TIMESTAMP_SUPPORTED] = {
-        .type = IEEE802154_PIB_TYPE_BOOL, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(TIMESTAMP_SUPPORTED),
-        .size = IEEE802154_PIB_SIZE(TIMESTAMP_SUPPORTED),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = false },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_BOOL, .v.b = true  }
-    },
-
-    [IEEE802154_PIB_TRANSACTION_PERSISTENCE_TIME] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(TRANSACTION_PERSISTENCE_TIME),
-        .size = IEEE802154_PIB_SIZE(TRANSACTION_PERSISTENCE_TIME),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0x01F4 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
-    },
-
-    [IEEE802154_PIB_UNIT_BACKOFF_PERIOD] = {
-        .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
-        .offset = IEEE802154_PIB_OFF(UNIT_BACKOFF_PERIOD),
-        .size = IEEE802154_PIB_SIZE(UNIT_BACKOFF_PERIOD),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0x0 },
-        .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
-        .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFF }
-    },
-};
-
-#undef IEEE802154_PIB_OFF
-#undef IEEE802154_PIB_SIZE
-
-static inline uint8_t rand_u8(void)
-{
-    return (uint8_t)random_uint32_range(0x00u, 0xFFu);
-}
-
-static inline uint8_t *ieee802154_pib_ptr_from_mac(ieee802154_mac_t *mac,
-                                                   const ieee802154_pib_attr_entry_t *e)
-{
-    ieee802154_pib_t *p = &mac->pib;
-    return (uint8_t *)((uint8_t *)p + (ptrdiff_t)e->offset);
-}
-
-static inline const uint8_t *ieee802154_pib_ptr_const_from_mac(const ieee802154_mac_t *mac,
-                                                               const ieee802154_pib_attr_entry_t *e)
-{
-    const ieee802154_pib_t *p = &mac->pib;
-    return (const uint8_t *)((const uint8_t *)p + (ptrdiff_t)e->offset);
-}
-
-static inline bool _pib_can_write(ieee802154_pib_access_t a)
-{
-    return (a == IEEE802154_PIB_ACC_RW);
-}
-
-static int _mac_mlme_set(ieee802154_mac_t *mac,
-                                             ieee802154_pib_attr_t attr,
-                                             const ieee802154_pib_value_t *in)
-{
-    const ieee802154_pib_attr_entry_t *e = &ieee802154_pib_attr[attr];
-
-    if (in->type != e->type) {
-        return -EINVAL;
-    }
-
-    uint8_t *dst = ieee802154_pib_ptr_from_mac(mac, e);
-
-    switch (e->type) {
-    case IEEE802154_PIB_TYPE_BOOL:
-        if (e->size != sizeof(bool)) {
-            return -EINVAL;
-        }
-        memcpy(dst, &in->v.b, sizeof(in->v.b));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_U8:
-        if (e->size != sizeof(uint8_t)) {
-            return -EINVAL;
-        }
-        memcpy(dst, &in->v.u8, sizeof(in->v.u8));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_U16:
-        if (e->size != sizeof(uint16_t)) {
-            return -EINVAL;
-        }
-        memcpy(dst, &in->v.u16, sizeof(in->v.u16));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_EUI64:
-        if (e->size != sizeof(eui64_t)) {
-            return -EINVAL;
-        }
-        memcpy(dst, &in->v.ext_addr, sizeof(in->v.ext_addr));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_NUI16:
-        if (e->size != 2) {
-            return -EINVAL;
-        }
-        memcpy(dst, &in->v.short_addr, sizeof(in->v.short_addr));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_BYTES:
-        if (e->size != sizeof(ieee802154_octets_t)) {
-            return -EINVAL;
-        }
-        if (in->v.bytes.len != 0 && in->v.bytes.ptr == NULL) {
-            return -EINVAL;
-        }
-        memcpy(dst, &in->v.bytes, sizeof(in->v.bytes));
-        return 0;
-
-    default:
-        return -EINVAL;
-    }
-}
-
-int _mac_mlme_get(const ieee802154_mac_t *mac,
-                                             ieee802154_pib_attr_t attr,
-                                             ieee802154_pib_value_t *out)
-{
-    const ieee802154_pib_attr_entry_t *e = &ieee802154_pib_attr[attr];
-
-    const uint8_t *src = ieee802154_pib_ptr_const_from_mac(mac, e);
-    out->type = e->type;
-
-    switch (e->type) {
-    case IEEE802154_PIB_TYPE_BOOL:
-        if (e->size != sizeof(bool))
-        {
-            return -EINVAL;
-        }
-        memcpy(&out->v.b, src, sizeof(out->v.b));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_U8:
-        if (e->size != sizeof(uint8_t))
-        {
-            return -EINVAL;
-        }
-        memcpy(&out->v.u8, src, sizeof(out->v.u8));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_U16:
-        if (e->size != sizeof(uint16_t))
-        {
-            return -EINVAL;
-        }
-        memcpy(&out->v.u16, src, sizeof(out->v.u16));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_EUI64:
-        if (e->size != sizeof(eui64_t))
-        {
-            return -EINVAL;
-        }
-        memcpy(&out->v.ext_addr, src, sizeof(out->v.ext_addr));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_NUI16:
-        if (e->size != 2)
-        {
-            return -EINVAL;
-        }
-        memcpy(&out->v.short_addr, src, sizeof(out->v.short_addr));
-        return 0;
-
-    case IEEE802154_PIB_TYPE_BYTES:
-        if (e->size != sizeof(ieee802154_octets_t))
-        {
-            return -EINVAL;
-        }
-        memcpy(&out->v.bytes, src, sizeof(out->v.bytes));
-        return 0;
-
-    default:
-        return -EINVAL;
-    }
-}
 
 void ieee802154_init_mac_thread(ieee802154_mac_t *mac, const ieee802154_mac_cbs_t *cbs){
     memset(mac, 0, sizeof(*mac));
     mac->cbs = *cbs;
-    for (unsigned i = 0; i < (unsigned)IEEE802154_PIB_ATTR_COUNT; i++) {
-        const ieee802154_pib_attr_entry_t *attr_entry = &ieee802154_pib_attr[i];
-
-        if (attr_entry->def.type != attr_entry->type) {
-            continue;
-        }
-
-        (void)_mac_mlme_set(mac, i, &attr_entry->def);
-    }
-
-    ieee802154_pib_value_t pib_value;
-
-    pib_value.type = IEEE802154_PIB_TYPE_U8;
-    pib_value.v.u8 = rand_u8();
-    (void)_mac_mlme_set(mac, IEEE802154_PIB_BSN, &pib_value);
-
-    pib_value.v.u8 = rand_u8();
-    (void)_mac_mlme_set(mac, IEEE802154_PIB_DSN, &pib_value);
-
+    ieee802154_mac_pib_init(mac);
     _hal_init_dev(mac, IEEE802154_DEV_TYPE_KW2XRF);
 }
 
@@ -833,32 +388,31 @@ static int _enqueue_tx_req_into_txq(ieee802154_mac_t *mac,
     }
 
     ieee802154_pib_value_t dsn;
-    int res = _mac_mlme_get(mac, IEEE802154_PIB_DSN, &dsn);
+    int res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_DSN, &dsn);
     if (res < 0) {
         d->in_use = false;
         return res;
     }
 
-    int mhr_len = ieee802154_set_frame_hdr(d->mhr,
+    size_t mhr_len = ieee802154_set_frame_hdr(d->mhr,
                                            src, src_len,
                                            r->u.tx.dst_len ? r->u.tx.dst_addr : NULL, r->u.tx.dst_len,
                                            src_pan, dst_pan,
                                            flags,
                                            dsn.v.u8);
-    if (mhr_len < 0 || mhr_len > (int)sizeof(d->mhr)) {
+    if (mhr_len == 0 || mhr_len > (int)sizeof(d->mhr)) {
         d->in_use = false;
         return -EINVAL;
     }
-    d->mhr_len = (uint8_t)mhr_len;
+    d->mhr_len = mhr_len;
 
     /* DSN++ */
     ieee802154_pib_value_t dsn_new = {
         .type = IEEE802154_PIB_TYPE_U8,
-        .v.u8 = (uint8_t)(dsn.v.u8 + 1),
+        .v.u8 = dsn.v.u8 + 1,
     };
-    (void)_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
+    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
 
-    /* attach payload (no second copy) */
     d->payload = r->u.tx.pl;
 
     ieee802154_mac_tx_commit(mac);
@@ -868,7 +422,7 @@ static int _enqueue_tx_req_into_txq(ieee802154_mac_t *mac,
 static int _mac_mlme_start(ieee802154_mac_t *mac, uint16_t channel){
     int res = ieee802154_set_channel_number(&mac->submac, channel);
     ieee802154_pib_value_t value;
-    _mac_mlme_get(mac, IEEE802154_PIB_PAN_ID, &value);
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_PAN_ID, &value);
     res |=  ieee802154_set_panid(&mac->submac, &value.v.u16 );
     return res;
 }
@@ -895,7 +449,7 @@ static void _drain_requests(ieee802154_mac_t *mac)
         }
 
         case IEEE802154_MAC_REQ_MLME_SET: {
-            int st = _mac_mlme_set(mac, r.u.set.attr, &r.u.set.value);
+            int st = ieee802154_mac_mlme_set(mac, r.u.set.attr, &r.u.set.value);
             if (mac->cbs.mlme_set_confirm) {
                 mac->cbs.mlme_set_confirm(mac->cbs.arg, r.handle, st, r.u.set.attr);
             }
@@ -904,7 +458,7 @@ static void _drain_requests(ieee802154_mac_t *mac)
 
         case IEEE802154_MAC_REQ_MLME_GET: {
             ieee802154_pib_value_t v;
-            int st = _mac_mlme_get(mac, r.u.get.attr, &v);
+            int st = ieee802154_mac_mlme_get(mac, r.u.get.attr, &v);
             if (mac->cbs.mlme_get_confirm) {
                 mac->cbs.mlme_get_confirm(mac->cbs.arg, r.handle, st, r.u.get.attr, v);
             }
@@ -980,11 +534,11 @@ void *ieee802154_mac_thread(void *arg)
         DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_INIT\n");
         ieee802154_pib_value_t short_addr_value;
         ieee802154_pib_value_t ext_addr_value;
-        int res = _mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr_value);
+        int res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr_value);
         if (res != 0){
             DEBUG("IEEE802154 MAC: ERROR getting short address\n");
         }
-        res = _mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &ext_addr_value);
+        res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &ext_addr_value);
         if (res != 0){
             DEBUG("IEEE802154 MAC: ERROR err getting extended address\n");
         }
