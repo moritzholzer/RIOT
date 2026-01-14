@@ -26,9 +26,8 @@ int ieee802154_mac_mlme_set_request(ieee802154_mac_t *mac,
                                 ieee802154_pib_attr_t attr,
                                 const ieee802154_pib_value_t *in)
 {
-    if (!mac || !in) {
-        return -EINVAL;
-    }
+    assert(mac);
+    assert(in);
 
     ieee802154_mac_req_t req;
     memset(&req, 0, sizeof(req));
