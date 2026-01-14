@@ -70,16 +70,16 @@ static inline int ieee80214_mac_req_ring_push(ieee802154_mac_t *mac, const ieee8
     return 0;
 }
 
-static inline bool ieee80214_mac_req_ring_pop(ieee802154_mac_t *mac, ieee802154_mac_req_t *out)
+static inline int ieee80214_mac_req_ring_pop(ieee802154_mac_t *mac, ieee802154_mac_req_t *out)
 {
     ieee802154_mac_req_ring_t *r = &mac->req_ring;
-    bool ok = false;
+    uint8_t ok = 0;
     mutex_lock(&r->lock);
     if (r->cnt) {
         *out = r->q[r->head];
         r->head = (uint8_t)((r->head + 1) % IEEE802154_MAC_REQ_RING_LEN);
         r->cnt--;
-        ok = true;
+        ok = 1;
     }
     mutex_unlock(&r->lock);
     return ok;

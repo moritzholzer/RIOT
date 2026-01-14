@@ -162,7 +162,7 @@ static void _hal_init_dev(ieee802154_mac_t *mac, ieee802154_dev_type_t dev_type)
         case IEEE802154_DEV_TYPE_MRF24J40:
 #if IS_USED(MODULE_MRF24J40)
             if ((radio = cb(IEEE802154_DEV_TYPE_MRF24J40, opaque))) {
-                for (unsigned i = 0; i < MRF24J40_NUM; i++) {
+               for (unsigned i = 0; i < MRF24J40_NUM; i++) {
                     const mrf24j40_params_t *p = &mrf24j40_params[i];
                     bhp_event_init(&mrf24j40_bhp[i], EVENT_PRIO_HIGHEST,
                                    &mrf24j40_radio_irq_handler, radio);

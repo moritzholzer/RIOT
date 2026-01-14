@@ -430,7 +430,7 @@ int ieee802154_mac_mlme_get(const ieee802154_mac_t *mac,
 }
 
 void ieee802154_mac_pib_init(ieee802154_mac_t *mac){
-    for (uint8_t i = 0; i < (uint8_t)IEEE802154_PIB_ATTR_COUNT; i++) {
+    for (unsigned i = 0; i < (uint8_t)IEEE802154_PIB_ATTR_COUNT; i++) {
         const ieee802154_pib_attr_entry_t *attr_entry = &ieee802154_pib_attr[i];
 
         if (attr_entry->def.type != attr_entry->type) {
