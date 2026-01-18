@@ -21,6 +21,7 @@ ifneq (,$(filter native native32 native64,$(BOARD)))
 endif
 
 CFLAGS += -DEVENT_THREAD_MEDIUM_STACKSIZE=1024
+CFLAGS += -DDEBUG_ASSERT_VERBOSE
 
 include $(RIOTBASE)/Makefile.include
 

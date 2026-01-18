@@ -14,14 +14,11 @@
 
 #include "container.h"
 #include "bhp/event.h"
-#include "isrpipe/read_timeout.h"
 #include "ztimer.h"
-#include "msg.h"
 
 #include "net/ieee802154/mac_internal.h"
 #include "net/ieee802154/mac.h"
 #include "net/ieee802154/mac_pib.h"
-
 
 #define ENABLE_DEBUG 1
 #include "debug.h"
@@ -187,20 +184,59 @@ static void _hal_init_dev(ieee802154_mac_t *mac, ieee802154_dev_type_t dev_type)
     }
 }
 
-
-void ieee802154_init_mac_thread(ieee802154_mac_t *mac, const ieee802154_mac_cbs_t *cbs){
-    memset(mac, 0, sizeof(*mac));
-    mac->cbs = *cbs;
-    ieee802154_mac_pib_init(mac);
-    _hal_init_dev(mac, IEEE802154_DEV_TYPE_KW2XRF);
-}
-
-void ieee802154_mac_post_event(ieee802154_mac_t *mac, ieee802154_mac_ev_t ev)
+void ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr)
 {
-    isrpipe_write_one(&mac->evpipe, (uint8_t)ev);
+    int slot = ieee802154_mac_indirectq_search_slot(&mac->indirect_q, dst_addr);
+    printf("slot sending: %d \n", slot);
+    if (slot < 0) {
+        if (mac->is_coordinator)
+        {
+            mac->cbs.rx_request(mac);
+        }
+        return;
+    }
+    ieee802154_mac_txq_t *txq = &mac->indirect_q.q[slot];
+    if (ieee802154_mac_tx_empty(txq) || mac->indirect_q.busy) {
+        ieee802154_mac_handle_indirectq_auto_free(mac, &mac->indirect_q, slot);
+        return;
+    }
+
+    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);
+    mac->indirect_q.current_slot = slot;
+    mac->indirect_q.current_txq = txq;
+    int r = ieee802154_send(&mac->submac, &d->iol_mhr);
+    if (r == 0)
+    {
+        mac->indirect_q.busy = true;
+    }
+    else {
+        ieee802154_mac_tx_finish_current(mac, r);
+    }
 }
 
-static void _radio_cb(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
+static void _process_event(ieee802154_mac_t *mac, uint8_t ev)
+{
+    switch ((ieee802154_mac_ev_t)ev) {
+    case IEEE802154_MAC_EV_RADIO_TX_DONE:
+        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_RADIO_TX_DONE\n");
+        ieee802154_submac_tx_done_cb(&mac->submac);
+        break;
+    case IEEE802154_MAC_EV_RADIO_RX_DONE:
+        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_RADIO_RX_DONE\n");
+        ieee802154_submac_rx_done_cb(&mac->submac);
+        break;
+
+    case IEEE802154_MAC_EV_RADIO_CRC_ERR:
+        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_RADIO_CRC_ERR\n");
+        ieee802154_submac_crc_error_cb(&mac->submac);
+        break;
+
+    default:
+        break;
+    }
+}
+
+void ieee802154_mac_handle_radio(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
 {
     ieee802154_submac_t *submac = container_of(dev, ieee802154_submac_t, dev);
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
@@ -220,32 +256,34 @@ static void _radio_cb(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
         return;
     }
 
-    ieee802154_mac_post_event(mac, ev);
-}
-
-void ieee802154_mac_radio_attach(ieee802154_mac_t *mac)
-{
-    mac->submac.dev.cb     = _radio_cb;
+    _process_event(mac, ev);
 }
 
 /* ACK timer callback */
 static void _ack_timer_cb(void *arg){
     ieee802154_mac_t *mac = (ieee802154_mac_t *)arg;
-    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_ACK_TIMEOUT);
+    mac->cbs.ack_timeout(mac);
+}
+
+void ieee802154_mac_ack_timeout_fired(ieee802154_mac_t *mac){
+    ieee802154_submac_ack_timeout_fired(&mac->submac);
+}
+
+void ieee802154_mac_bh_process(ieee802154_mac_t *mac){
+    ieee802154_submac_bh_process(&mac->submac);
 }
 
 /* ===== Required SubMAC extern hooks ===== */
 void ieee802154_submac_bh_request(ieee802154_submac_t *submac){
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
-    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_SUBMAC_BH);
+    puts("bh request\n");
+    mac->cbs.bh_request(mac);
 }
 
 void ieee802154_submac_ack_timer_set(ieee802154_submac_t *submac)
 {
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
-    mac->ack_timer.callback = _ack_timer_cb;
-    mac->ack_timer.arg = mac;
-
+    puts("ACK TIMEOUT SET\n");
     ztimer_set(ZTIMER_USEC, &mac->ack_timer, (uint32_t)submac->ack_timeout_us);
 }
 
@@ -258,16 +296,49 @@ void ieee802154_submac_ack_timer_cancel(ieee802154_submac_t *submac){
 /* ===== SubMAC callbacks ===== */
 static void _submac_rx_done(ieee802154_submac_t *submac){
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
-    int len = ieee802154_get_frame_length(submac);
-    if (len <= 0 || len > (int)sizeof(mac->rx_buf)) {
-        (void)ieee802154_read_frame(submac, NULL, 0, NULL);
-        return;
+    mac->cbs.allocate_request(mac);
     }
 
+void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
+{
+    puts("here\n");
+    eui64_t src_addr;
+    uint8_t src[IEEE802154_LONG_ADDRESS_LEN];//, dst[IEEE802154_LONG_ADDRESS_LEN];
+    uint8_t cmd_type, frame_type;
+    size_t mhr_len, src_len;
+    le_uint16_t src_pan;
+    int len = ieee802154_get_frame_length(&mac->submac);
+    if (len <= 0) {
+        (void)ieee802154_read_frame(&mac->submac, NULL, 0, NULL);
+        return;
+    }
+    // TODO: switch back to rx? or let upper layer do it??
     ieee802154_rx_info_t info;
-    int r = ieee802154_read_frame(submac, mac->rx_buf, sizeof(mac->rx_buf), &info);
-    if (r > 0 && mac->cbs.data_indication) {
-        mac->cbs.data_indication(mac->cbs.arg, mac->rx_buf, (size_t)r, &info);
+    buf->iol_len = len;
+    (void)ieee802154_read_frame(&mac->submac, buf->iol_base, buf->iol_len, &info);
+    mhr_len = ieee802154_get_frame_hdr_len(buf->iol_base);
+    frame_type =((const uint8_t *)buf->iol_base)[0] & IEEE802154_FCF_TYPE_MASK;
+    //dst_len = ieee802154_get_dst(buf->iol_base, dst, &dst_pan);
+    src_len = ieee802154_get_src(buf->iol_base, src, &src_pan);
+    memcpy(&src_addr, src, src_len);
+    printf("frame type: %d\n", frame_type);
+    switch(frame_type)
+    {
+    case IEEE802154_FCF_TYPE_DATA:
+        if (mac->cbs.data_indication) {
+            mac->cbs.data_indication(mac->cbs.mac, buf, &info);
+        }
+        break;
+    case IEEE802154_FCF_TYPE_MACCMD:
+        cmd_type = ((const uint8_t *)buf->iol_base)[mhr_len];
+        if (cmd_type == IEEE802154_CMD_DATA_REQ)
+        {
+            puts("data request \n");
+            ieee802154_mac_tx(mac, &src_addr);
+        }
+        break;
+    default:
+        return;
     }
 }
 
@@ -293,9 +364,6 @@ static void _submac_tx_done(ieee802154_submac_t *submac, int status, ieee802154_
     }
 
     ieee802154_mac_tx_finish_current(mac, res);
-
-    /* start next if queued */
-    ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_TX);
 }
 
 static const ieee802154_submac_cb_t _submac_cbs = {
@@ -303,270 +371,93 @@ static const ieee802154_submac_cb_t _submac_cbs = {
     .tx_done = _submac_tx_done,
 };
 
-void ieee802154_mac_submac_attach(ieee802154_mac_t *mac){
-    mac->submac.cb = &_submac_cbs;
+static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indirect_q, int slot, int status)
+{
+    if (ieee802154_mac_tx_empty(&indirect_q->q[slot])) {
+        mac->indirect_q.busy= false;
+        return;
+    }
+
+    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(&indirect_q->q[slot]);
+    if (mac->cbs.data_confirm) {
+       mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
+    }
+    if (mac->is_coordinator ||  ((status == 0) && (d->handle == 0xFF)))
+    {
+        puts("rx_request\n");
+        mac->cbs.rx_request(mac);
+    }
+    d->in_use = false;
+    ieee802154_mac_tx_pop(&indirect_q->q[slot]);
+    ieee802154_mac_handle_indirectq_auto_free(mac, indirect_q, slot);
+    mac->indirect_q.busy = false;
+}
+
+void ieee802154_mac_tick(ieee802154_mac_t *mac){
+    mac->indirect_q.tick++;
+    puts("tick\n");
+    for (unsigned i = 0; i< IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++)
+    {
+        if (ieee802154_mac_frame_is_expired(mac->indirect_q.tick, *mac->indirect_q.q[i].deadline_tick))
+        {
+            _tx_finish(mac, &mac->indirect_q, i, -ETIMEDOUT);
+        }
+    }
+    ztimer_set(ZTIMER_USEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_US);
 }
 
 void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status)
 {
-    if (ieee802154_mac_tx_empty(mac)) {
-        mac->tx_ring.busy = false;
-        return;
-    }
-
-    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(mac);
-
-    if (mac->cbs.data_confirm) {
-        mac->cbs.data_confirm(mac->cbs.arg, d->handle, status);
-    }
-
-    d->in_use = false;
-    ieee802154_mac_tx_pop(mac);
-    mac->tx_ring.busy = false;
+    _tx_finish(mac, &mac->indirect_q, mac->indirect_q.current_slot, status);
 }
 
-static void _tx_kick(ieee802154_mac_t *mac)
+void _init_tx_q(ieee802154_mac_t *mac){
+    /* 1 means free with this the count of 1 is == IEEE802154_MAC_TX_INDIRECTQ_SIZE */
+    mac->indirect_q.free_mask = (1U << IEEE802154_MAC_TX_INDIRECTQ_SIZE)-1;
+    mutex_init(&mac->indirect_q.lock);
+    memset(&mac->indirect_q.q, 0, sizeof(ieee802154_mac_tx_desc_t) * IEEE802154_MAC_TX_INDIRECTQ_SIZE);
+}
+
+void ieee802154_init_mac_internal(ieee802154_mac_t *mac)
 {
-    if (mac->tx_ring.busy || ieee802154_mac_tx_empty(mac)) {
-        return;
-    }
-
-    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(mac);
-    if (!d || !d->payload) {
-        return;
-    }
-
-    d->iol_msdu.iol_base = (void *)d->payload->buf;
-    d->iol_msdu.iol_len  = d->payload->len;
-    d->iol_msdu.iol_next = NULL;
-
-    d->iol_mhr.iol_base  = d->mhr;
-    d->iol_mhr.iol_len   = d->mhr_len;
-    d->iol_mhr.iol_next  = &d->iol_msdu;
-
-    int r = ieee802154_send(&mac->submac, &d->iol_mhr);
-    if (r == 0) {
-        mac->tx_ring.busy = true;
-    }
-    else {
-        ieee802154_mac_tx_finish_current(mac, r);
-        _tx_kick(mac);
-    }
-}
-
-static int _enqueue_tx_req_into_txq(ieee802154_mac_t *mac,
-                                   const ieee802154_mac_req_t *r)
-{
-
-    if (ieee802154_mac_tx_full(mac)) {
-        return -ENOBUFS;
-    }
-
-    ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_reserve(mac);
-    if (!d) {
-        return -ENOBUFS;
-    }
-
-    d->handle = r->handle;
-
-    /* src addr selection */
-    const void *src = NULL;
-    uint8_t src_len = ieee80214_addr_len_from_mode(r->u.tx.src_mode);
-    if (r->u.tx.src_mode == IEEE802154_ADDR_MODE_SHORT) {
-        src = &mac->submac.short_addr;
-    }
-    else if (r->u.tx.src_mode == IEEE802154_ADDR_MODE_EXTENDED) {
-        src = &mac->submac.ext_addr;
-    }
-
-    le_uint16_t src_pan = byteorder_btols(byteorder_htons(mac->submac.panid));
-    le_uint16_t dst_pan = byteorder_btols(byteorder_htons(r->u.tx.dst_panid));
-
-    uint8_t flags = IEEE802154_FCF_TYPE_DATA;
-    if (r->u.tx.ack_req) {
-        flags |= IEEE802154_FCF_ACK_REQ;
-    }
-
-    ieee802154_pib_value_t dsn;
-    int res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_DSN, &dsn);
-    if (res < 0) {
-        d->in_use = false;
-        return res;
-    }
-
-    size_t mhr_len = ieee802154_set_frame_hdr(d->mhr,
-                                           src, src_len,
-                                           r->u.tx.dst_len ? r->u.tx.dst_addr : NULL, r->u.tx.dst_len,
-                                           src_pan, dst_pan,
-                                           flags,
-                                           dsn.v.u8);
-    if (mhr_len == 0 || mhr_len > (int)sizeof(d->mhr)) {
-        d->in_use = false;
-        return -EINVAL;
-    }
-    d->mhr_len = mhr_len;
-
-    /* DSN++ */
-    ieee802154_pib_value_t dsn_new = {
-        .type = IEEE802154_PIB_TYPE_U8,
-        .v.u8 = dsn.v.u8 + 1,
-    };
-    (void)ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
-
-    d->payload = r->u.tx.pl;
-
-    ieee802154_mac_tx_commit(mac);
-    return 0;
-}
-
-static int _mac_mlme_start(ieee802154_mac_t *mac, uint16_t channel){
-    int res = ieee802154_set_channel_number(&mac->submac, channel);
-    ieee802154_pib_value_t value;
-    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_PAN_ID, &value);
-    res |=  ieee802154_set_panid(&mac->submac, &value.v.u16 );
-    return res;
-}
-
-static void _drain_requests(ieee802154_mac_t *mac)
-{
-    ieee802154_mac_req_t r;
-    bool kick = false;
-
-    while (ieee80214_mac_req_ring_pop(mac, &r)) {
-        switch (r.type) {
-        case IEEE802154_MAC_REQ_TX: {
-            int st = _enqueue_tx_req_into_txq(mac, &r);
-            if (st < 0) {
-                ieee802154_mac_payload_free(mac, r.u.tx.pl);
-                if (mac->cbs.data_confirm) {
-                    mac->cbs.data_confirm(mac->cbs.arg, r.handle, st);
-                }
-            }
-            else {
-                kick = true;
-            }
-            break;
-        }
-
-        case IEEE802154_MAC_REQ_MLME_SET: {
-            int st = ieee802154_mac_mlme_set(mac, r.u.set.attr, &r.u.set.value);
-            if (mac->cbs.mlme_set_confirm) {
-                mac->cbs.mlme_set_confirm(mac->cbs.arg, r.handle, st, r.u.set.attr);
-            }
-            break;
-        }
-
-        case IEEE802154_MAC_REQ_MLME_GET: {
-            ieee802154_pib_value_t v;
-            int st = ieee802154_mac_mlme_get(mac, r.u.get.attr, &v);
-            if (mac->cbs.mlme_get_confirm) {
-                mac->cbs.mlme_get_confirm(mac->cbs.arg, r.handle, st, r.u.get.attr, v);
-            }
-            break;
-        }
-
-        case IEEE802154_MAC_REQ_MLME_START: {
-            int st = _mac_mlme_start(mac, r.u.start.channel);
-            if (mac->cbs.mlme_start_confirm) {
-                mac->cbs.mlme_start_confirm(mac->cbs.arg, r.handle, st);
-            }
-            break;
-        }
-        }
-    }
-
-    if (kick) {
-        ieee802154_mac_post_event(mac, IEEE802154_MAC_EV_TX);
-    }
-}
-
-static void _process_event(ieee802154_mac_t *mac, uint8_t ev)
-{
-    switch ((ieee802154_mac_ev_t)ev) {
-    case IEEE802154_MAC_EV_REQ:
-        DEBUG("IEEE802154 MAC: IEEE802154_MAC_EV_REQ\n");
-        _drain_requests(mac);
+    memset(mac->cmd_buf, 0, IEEE802154_FRAME_LEN_MAX);
+    mac->cmd.iol_base = mac->cmd_buf;
+    mac->cmd.iol_len = IEEE802154_FRAME_LEN_MAX;
+    mac->cmd.iol_next = NULL;
+    _hal_init_dev(mac, IEEE802154_DEV_TYPE_KW2XRF);
+    ieee802154_pib_value_t short_addr_value;
+    ieee802154_pib_value_t ext_addr_value;
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr_value);
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &ext_addr_value);
+    uint16_t sym_us;
+    ieee802154_phy_mode_t phy_mode = ieee802154_get_phy_mode(&mac->submac);
+    switch (phy_mode) {
+    case IEEE802154_PHY_OQPSK:
+        sym_us = IEEE802154_SYMBOL_TIME_US;
         break;
-    case IEEE802154_MAC_EV_RADIO_TX_DONE:
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_RADIO_TX_DONE\n");
-        ieee802154_submac_tx_done_cb(&mac->submac);
+    case IEEE802154_PHY_MR_FSK:
+        sym_us = IEEE802154_MR_FSK_SYMBOL_TIME_US;
         break;
-    case IEEE802154_MAC_EV_RADIO_RX_DONE:
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_RADIO_RX_DONE\n");
-        ieee802154_submac_rx_done_cb(&mac->submac);
+    case IEEE802154_PHY_MR_OFDM:
+        sym_us = IEEE802154_MR_OFDM_SYMBOL_TIME_US;
         break;
-
-    case IEEE802154_MAC_EV_RADIO_CRC_ERR:
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_RADIO_CRC_ERR\n");
-        ieee802154_submac_crc_error_cb(&mac->submac);
-        break;
-
-    case IEEE802154_MAC_EV_SUBMAC_BH:
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_SUBMAC_BH\n");
-        ieee802154_submac_bh_process(&mac->submac);
-        break;
-
-    case IEEE802154_MAC_EV_ACK_TIMEOUT:
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_ACK_TIMEOUT\n");
-        /* Must be thread context (submac.h note) */
-        ieee802154_submac_ack_timeout_fired(&mac->submac);
-        break;
-
-    case IEEE802154_MAC_EV_TX:
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_TX_KICK\n");
-        _tx_kick(mac);
-        break;
-
     default:
+        /* TODO: check for correct symbol times */
+        // MR-OQPSK / ASK / BPSK etc
+        sym_us = IEEE802154_SYMBOL_TIME_US; /* fallback rn */
         break;
     }
-}
+    mac->sym_us = sym_us;
 
-void *ieee802154_mac_thread(void *arg)
-{
-    ieee802154_mac_t *mac = (ieee802154_mac_t *)arg;
-
-    /* init handshake */
-    msg_t m;
-    msg_receive(&m);
-
-    if (m.type == IEEE802154_MAC_EV_INIT) {
-        DEBUG("IEEE802154 MAC: processing event IEEE802154_MAC_EV_INIT\n");
-        ieee802154_pib_value_t short_addr_value;
-        ieee802154_pib_value_t ext_addr_value;
-        int res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr_value);
-        if (res != 0){
-            DEBUG("IEEE802154 MAC: ERROR getting short address\n");
-        }
-        res = ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &ext_addr_value);
-        if (res != 0){
-            DEBUG("IEEE802154 MAC: ERROR err getting extended address\n");
-        }
-        ieee802154_submac_init(&mac->submac, &short_addr_value.v.short_addr, &ext_addr_value.v.ext_addr);
-        msg_t reply = { .type = IEEE802154_MAC_EV_INIT };
-        reply.content.value = (uint32_t)res;
-        msg_reply(&m, &reply);
-    }
-    else {
-        msg_t reply = { .type = IEEE802154_MAC_EV_INIT };
-        reply.content.value = (uint32_t)(-EINVAL);
-        msg_reply(&m, &reply);
-    }
-
-    /* main loop */
-    while (1) {
-        uint8_t ev;
-
-        /* block if nothing to do */
-        int n = isrpipe_read(&mac->evpipe, &ev, 1);
-        if (n == 1) {
-            _process_event(mac, ev);
-        }
-        /* read remaining elements in queue */
-        while (isrpipe_read_timeout(&mac->evpipe, &ev, 1, 0) == 1) {
-            _process_event(mac, ev);
-        }
-    }
-
-    return NULL;
+    _init_tx_q(mac);
+    mutex_init(&mac->submac_lock);
+    mutex_lock(&mac->submac_lock);
+    ieee802154_submac_init(&mac->submac, &short_addr_value.v.short_addr, &ext_addr_value.v.ext_addr);
+    mac->submac.cb = &_submac_cbs;
+    mac->submac.dev.cb = mac->cbs.radio_cb_request;
+    mac->tick.callback = mac->cbs.tick_request;
+    mac->tick.arg = mac;
+    mac->ack_timer.callback = _ack_timer_cb;
+    mac->ack_timer.arg = mac;
+    mutex_unlock(&mac->submac_lock);
 }
