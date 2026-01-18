@@ -7,45 +7,59 @@ extern "C" {
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include "assert.h"
-#include "sched.h"
-#include "thread.h"
-#include "isrpipe.h"
 #include "ztimer.h"
 #include "iolist.h"
+#include "kernel_defines.h"
 
 #include "net/ieee802154.h"
 #include "net/ieee802154/submac.h"
 #include "net/ieee802154/radio.h"
 
+#define IEEE802154_MAC_INDIRECT_ENABLE
+
+#if IS_USED(MODULE_ESP_IEEE802154)
+#define IEEE802154_MAC_HAS_SRC_ADDR_MATCH
+#endif
+
+#ifdef IEEE802154_MAC_INDIRECT_ENABLE
+#  ifndef IEEE802154_MAC_HAS_SRC_ADDR_MATCH
+#    define IEEE802154_MAC_FORCE_SOFT_ACK
+#  endif
+#endif
 
 #ifndef IEEE802154_MAC_TXQ_LEN
 #define IEEE802154_MAC_TXQ_LEN   (4U)
 #endif
 
-#ifndef IEEE802154_MAC_EVPIPE_LEN
-#define IEEE802154_MAC_EVPIPE_LEN (16U)
+#ifndef IEEE802154_MAC_TICK_INTERVAL_US
+#define IEEE802154_MAC_TICK_INTERVAL_US     (1000U)
 #endif
 
-#ifndef IEEE802154_MAC_STACKSIZE
-#define IEEE802154_MAC_STACKSIZE (THREAD_STACKSIZE_DEFAULT)
+#ifndef IEEE802154_MAC_TX_INDIRECTQ_SIZE
+#define IEEE802154_MAC_TX_INDIRECTQ_SIZE     (4)
 #endif
 
-#ifndef IEEE802154_MAC_PRIO
-#define IEEE802154_MAC_PRIO      (THREAD_PRIORITY_MAIN - 1)
+#ifndef IEEE802154_MAC_BASE_SLOT_DURATION
+#define IEEE802154_MAC_BASE_SLOT_DURATION   (60U)
 #endif
 
-#ifndef IEEE802154_MAC_PAYLOAD_POOL_N
-#define IEEE802154_MAC_PAYLOAD_POOL_N  8
+#ifndef IEEE802154_MAC_MAX_LOST_BEACONS
+#define IEEE802154_MAC_MAX_LOST_BEACONS   (4U)
 #endif
 
-#ifndef IEEE802154_MAC_PAYLOAD_MAX
-#define IEEE802154_MAC_PAYLOAD_MAX     IEEE802154_FRAME_LEN_MAX
+#ifndef IEEE802154_MAC_MIN_CAP_LENGTH
+#define IEEE802154_MAC_MIN_CAP_LENGTH   (440U)
 #endif
 
-#ifndef IEEE802154_MAC_REQ_RING_LEN
-#define IEEE802154_MAC_REQ_RING_LEN  (8)
+#ifndef IEEE802154_MAC_NUM_SUPERFRAME_SLOTS
+#define IEEE802154_MAC_NUM_SUPERFRAME_SLOTS     (16)
 #endif
+
+#ifndef IEEE802154_MAC_BASE_SUPERFRAME_DURATION
+#define IEEE802154_MAC_BASE_SUPERFRAME_DURATION   (IEEE802154_MAC_BASE_SLOT_DURATION * IEEE802154_MAC_NUM_SUPERFRAME_SLOTS)
+#endif
+
+#
 /**
  * @brief IEEE 802.15.4 extended adress
  */
@@ -66,7 +80,7 @@ typedef struct {
 /**
  * @brief IEEE 802.15.4 MAC PIB.
  */
-typedef struct ieee802154_pib_t {
+typedef struct {
     bool AOA_ENABLE;
     bool AUTO_REQUEST;
     bool BATT_LIFE_EXT;
@@ -203,164 +217,154 @@ typedef struct {
 /**
  * @brief IEEE 802.15.4 MAC MCPS-DATA.confirm callback.
  */
-typedef void (*ieee802154_mcps_data_confirm_cb_t)(void *arg, uint8_t handle, int status);
+typedef void (*ieee802154_mcps_data_confirm_cb_t)(void *mac, uint8_t handle, int status);
 
-/**
+/*t i*
  * @brief IEEE 802.15.4 MAC MCPS-DATA.indication callback.
  */
-typedef void (*ieee802154_mcps_data_indication_cb_t)(void *arg,
-                                                    const uint8_t *psdu, size_t len,
+typedef void (*ieee802154_mcps_data_indication_cb_t)(void *mac, iolist_t *msdu,
                                                     const ieee802154_rx_info_t *info);
 
 /* === MLME confirm callback types === */
 
-typedef void (*ieee802154_mlme_set_confirm_cb_t)(void *arg,
+typedef void (*ieee802154_mlme_set_confirm_cb_t)(void *mac,
                                                 uint8_t handle,
                                                 int status,
                                                 ieee802154_pib_attr_t attr);
 
-typedef void (*ieee802154_mlme_get_confirm_cb_t)(void *arg,
+typedef void (*ieee802154_mlme_get_confirm_cb_t)(void *mac,
                                                 uint8_t handle,
                                                 int status,
                                                 ieee802154_pib_attr_t attr,
                                                 ieee802154_pib_value_t value);
 
-typedef void (*ieee802154_mlme_start_confirm_cb_t)(void *arg,
+typedef void (*ieee802154_mlme_start_confirm_cb_t)(void *mac,
                                                   uint8_t handle,
                                                   int status);
+
+typedef void (*ieee802154_mac_ack_timeout_fired_cb_t)(void *mac);
+
+typedef void (*ieee802154_mac_bh_request_cb_t)(void *mac);
+
+/* === RADIO callbacks === */
+typedef void (*ieee802154_radio_cb_request_t)(ieee802154_dev_t *dev, ieee802154_trx_ev_t st);
+
+/* === Transmission callbacks === */
+typedef void (*ieee802154_mac_tick_t)(void *mac);
+typedef void (*ieee802154_mac_allocate_request_t)(void *mac);
+typedef void (*ieee802154_mac_rx_request_t)(void *mac);
 
 /**
  * @brief IEEE 802.15.4 MAC callbacks.
  */
 typedef struct {
-    ieee802154_mcps_data_confirm_cb_t data_confirm;         /**< MCPS-DATA.confirm callback*/
-    ieee802154_mcps_data_indication_cb_t data_indication;   /**< MCPS-DATA.indication callback*/
-    /* MLME (async confirms) */
-    ieee802154_mlme_set_confirm_cb_t   mlme_set_confirm;    /**< MLME-SET.confirm callback */
-    ieee802154_mlme_get_confirm_cb_t   mlme_get_confirm;    /**< MLME-GET.confirm callback */
-    ieee802154_mlme_start_confirm_cb_t mlme_start_confirm;  /**< MLME-START.confirm callback */
-    void *arg;
+    ieee802154_mcps_data_confirm_cb_t       data_confirm;       /**< MCPS-DATA.confirm callback*/
+    ieee802154_mcps_data_indication_cb_t    data_indication;    /**< MCPS-DATA.indication callback*/
+    ieee802154_mlme_start_confirm_cb_t      mlme_start_confirm; /**< MLME-START.confirm callback */
+    ieee802154_mac_ack_timeout_fired_cb_t   ack_timeout;        /**< ieee802154_mac_ack_timeout_fired() should be dispatched */
+    ieee802154_mac_bh_request_cb_t          bh_request;         /**< ieee802154_mac_bh_process() should be dispatched */
+    ieee802154_radio_cb_request_t           radio_cb_request;   /**< ieee802154_mac_handle_radio() should be dispatched */
+    ieee802154_mac_tick_t                   tick_request;
+    ieee802154_mac_allocate_request_t       allocate_request;
+    ieee802154_mac_rx_request_t             rx_request;
+    void *mac;
 } ieee802154_mac_cbs_t;
 
-typedef struct {
-    bool in_use;
-    size_t len;
-    uint8_t buf[IEEE802154_MAC_PAYLOAD_MAX];
-} ieee802154_mac_payload_t;
 
 typedef struct {
-    bool in_use;                                /**< wheather ring buffer element is in use */
-    uint8_t handle;                             /**< the MSDU handle */
-    uint8_t mhr[IEEE802154_MAX_HDR_LEN];        /**< persistent header storage */
-    size_t mhr_len;                            /**< len of the header */
-    iolist_t iol_mhr;                           /**< persistent iolist nodes */
-    iolist_t iol_msdu;                          /**< persistent iolist nodes */
-    ieee802154_mac_payload_t *payload;
+    bool in_use;                                 /**< wheather ring buffer element is in use */
+    uint8_t handle;                              /**< the MSDU handle */
+    bool indirect;
+    bool ack;
+    uint16_t deadline_tick;
+    uint8_t mhr[IEEE802154_MAX_HDR_LEN];         /**< persistent header storage */
+    iolist_t iol_mhr;                            /**< persistent mhr */
+    iolist_t *iol_msdu;                          /**< iolist nodes */
 } ieee802154_mac_tx_desc_t;
-
-typedef enum {
-    IEEE802154_MAC_REQ_TX,
-    IEEE802154_MAC_REQ_MLME_SET,
-    IEEE802154_MAC_REQ_MLME_GET,
-    IEEE802154_MAC_REQ_MLME_START,
-} ieee802154_mac_req_type_t;
-
-typedef struct {
-    ieee802154_mac_req_type_t type;
-    uint8_t handle;
-
-    union {
-        struct {
-            ieee802154_addr_mode_t src_mode;
-            ieee802154_addr_mode_t dst_mode;
-            uint16_t dst_panid;
-            uint8_t dst_addr[8];
-            uint8_t dst_len;
-            bool ack_req;
-            ieee802154_mac_payload_t *pl;
-        } tx;
-
-        struct {
-            ieee802154_pib_attr_t attr;
-            ieee802154_pib_value_t value;
-        } set;
-
-        struct {
-            ieee802154_pib_attr_t attr;
-        } get;
-
-        struct {
-            uint16_t panid;
-            uint8_t channel;
-            bool beaconing;
-        } start;
-
-    } u;
-} ieee802154_mac_req_t;
-
-typedef struct {
-    ieee802154_mac_req_t q[IEEE802154_MAC_REQ_RING_LEN];
-    uint8_t head, tail, cnt;
-    mutex_t lock;
-} ieee802154_mac_req_ring_t;
 
 typedef struct {
     ieee802154_mac_tx_desc_t q[IEEE802154_MAC_TXQ_LEN]; /**< outgoing queue */
+    eui64_t dst_addr;
     uint8_t head;                                       /**< queue head */
     uint8_t tail;                                       /**< queue tail */
     uint8_t cnt;                                        /**< queue count */
-    bool busy;                                          /**< currently sending */
-    mutex_t lock;                                       /**< guard access (optional) */
+    uint16_t *deadline_tick;
 } ieee802154_mac_txq_t;
+
+typedef struct {
+    ieee802154_mac_txq_t q[IEEE802154_MAC_TX_INDIRECTQ_SIZE];
+    ieee802154_mac_txq_t *current_txq;
+    unsigned current_slot;
+    bool busy;
+    uint16_t tick;
+    uint32_t free_mask;
+    mutex_t lock;
+} ieee802154_mac_indirect_q_t;
 
 /**
  * @brief IEEE 802.15.4 MAC descriptor
  */
 typedef struct {
+    bool is_coordinator;
     ieee802154_pib_t pib;                                       /**< PIB of the MAC */
     mutex_t pib_lock;
     ieee802154_submac_t submac;                                 /**< SubMAC descriptor */
     mutex_t submac_lock;
     ieee802154_mac_cbs_t cbs;                                   /**< callbacks for the SubMAC */
-    kernel_pid_t pid;                                           /**< pid of MAC thread */
-    char stack[IEEE802154_MAC_STACKSIZE];                       /**< stack size of the mac thread */
-    isrpipe_t evpipe;                                           /**< event pipe for the submac ISR */
-    uint8_t evpipe_buf[IEEE802154_MAC_EVPIPE_LEN];              /**< buffer of the event pipe */
     ztimer_t ack_timer;                                         /**< timer for ACK timeout */
-    ieee802154_mac_payload_t payload_pool[IEEE802154_MAC_PAYLOAD_POOL_N];  /**< pool for the payloads (TX) */
-    mutex_t payload_pool_lock;                                  /**< pool lock */
-    uint8_t rx_buf[IEEE802154_FRAME_LEN_MAX];                   /**< receiving buf */
-    ieee802154_mac_req_ring_t req_ring;
-    ieee802154_mac_txq_t tx_ring;
+    ztimer_t tick;                                              /**< tick for frame timeouts */
+    uint8_t cmd_buf[IEEE802154_FRAME_LEN_MAX];                   /**< receiving buf */
+    iolist_t cmd;
+    ieee802154_mac_indirect_q_t indirect_q;
+    uint16_t sym_us;
 } ieee802154_mac_t;
+
+/* === Function that has to be dispatched and called on callbacks */
+
+/**
+ * Has to ba called from thread context when ieee802154_mac_ack_timeout_fired_cb_t is called
+ */
+void ieee802154_mac_ack_timeout_fired(ieee802154_mac_t *mac);
+
+/**
+ * @brief Has to be called from thread context when ieee802154_mac_bh_request_cb_t is called
+ */
+void ieee802154_mac_bh_process(ieee802154_mac_t *mac);
+
+/**
+ * @brief Hast to be called from thread context when ieeee802154_radio_cb_request_t is called
+ */
+void ieee802154_mac_handle_radio(ieee802154_dev_t *dev, ieee802154_trx_ev_t st);
+
+void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf);
+
+void ieee802154_mac_tick(ieee802154_mac_t *mac);
 
 /**
  * @brief Init the IEEE 802.15.4 MAC
  */
-int ieee802154_mac_init(ieee802154_mac_t *mac,
+void ieee802154_mac_init(ieee802154_mac_t *mac,
                         const ieee802154_mac_cbs_t *cbs);
 
-/**
- * @brief Starts the IEEE 802.15.4 MAC
- */
-int ieee802154_mac_start(ieee802154_mac_t *mac);
-
 int ieee802154_mac_mlme_scan_request(void);
-int ieee802154_mac_mlme_set_request(ieee802154_mac_t *mac,
-                                ieee802154_pib_attr_t attr,
-                                const ieee802154_pib_value_t *in);
-int ieee802154_mac_mlme_get_request(ieee802154_mac_t *mac, ieee802154_pib_attr_t attr);
+void ieee802154_mac_mlme_set_request(ieee802154_mac_t *mac,
+                            ieee802154_pib_attr_t attr,
+                            const ieee802154_pib_value_t *in);
+void ieee802154_mac_mlme_get_request(ieee802154_mac_t *mac,
+                            ieee802154_pib_attr_t attr,
+                            ieee802154_pib_value_t *out);
 int ieee802154_mlme_start_request(ieee802154_mac_t *mac, uint16_t channel);
 int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  ieee802154_addr_mode_t src_mode,
                                  ieee802154_addr_mode_t dst_mode,
                                  uint16_t dst_panid,
                                  const void *dst_addr,
-                                 ieee802154_octets_t msdu,
+                                 iolist_t *msdu,
                                  uint8_t msdu_handle,
-                                 bool ack_req);
+                                 bool ack_req,
+                                 bool indirect);
 int ieee802154_mac_mlme_associate(void);
-int ieee802154_mac_mlme_poll(void);
+int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord_mode, uint16_t coord_panid, const void *coord_addr);
 int ieee802154_mac_mcps_data(void);
 int ieee802154_mac_mcps_reset(void);
 int ieee802154_mac_mlme_purge(void);

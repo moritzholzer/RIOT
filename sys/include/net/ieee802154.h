@@ -86,6 +86,16 @@ extern "C" {
 /** @} */
 
 /**
+ * @brief IEEE 802.15.4 MAC commands definitions
+ * @{
+ */
+#define IEEE802154_CMD_ASSOCIATION_REQ          (0x01)
+#define IEEE802154_CMD_ASSOCIATION_RES          (0x02)
+#define IEEE802154_CMD_DISASSOCIATION           (0x01)
+#define IEEE802154_CMD_DATA_REQ                 (0x04)
+/** @} */
+
+/**
  * @brief   Channel ranges
  * @{
  */

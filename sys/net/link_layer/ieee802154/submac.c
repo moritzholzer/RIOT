@@ -24,7 +24,7 @@
 #include "kernel_defines.h"
 #include "errno.h"
 
-#define ENABLE_DEBUG 0
+#define ENABLE_DEBUG 1
 #include "debug.h"
 
 #define CSMA_SENDER_BACKOFF_PERIOD_UNIT_US  (320U)
@@ -455,7 +455,6 @@ ieee802154_fsm_state_t ieee802154_submac_process_ev(ieee802154_submac_t *submac,
         DEBUG("IEEE802154 submac: ieee802154_submac_process_ev(): INVALID STATE\n");
         new_state = IEEE802154_FSM_STATE_INVALID;
     }
-
     if (new_state == IEEE802154_FSM_STATE_INVALID) {
         _print_debug(submac->fsm_state, new_state, ev);
         new_state = submac->fsm_state;
