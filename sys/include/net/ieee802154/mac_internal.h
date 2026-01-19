@@ -213,8 +213,12 @@ static inline void ieee802154_mac_handle_indirectq_auto_free(ieee802154_mac_t *m
         ieee802154_ext_addr_t dst_addr = txq->dst_addr;
         ieee802154_indirectq_free_slot(indirect_q, slot);
         ieee802154_mac_indirect_fp_update(mac, &dst_addr, false);
-    }else{
-        indirect_q->q[slot].deadline_tick = &ieee802154_mac_tx_peek(indirect_q->current_txq)->deadline_tick;
+    }
+    else {
+        ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);
+        if (d) {
+            txq->deadline_tick = &d->deadline_tick;
+        }
     }
 }
 
@@ -232,6 +236,9 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
 {
     DEBUG("Enqeue data in tx\n");
     ieee802154_mac_tx_desc_t *dsc = ieee802154_mac_tx_reserve(txq);
+    if (!dsc) {
+        return -ENOBUFS;
+    }
     dsc->handle = *msdu_handle;
     dsc->ack = ack_req;
     dsc->indirect = indirect;
@@ -301,6 +308,9 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
 }
 
 static inline int ieee802154_mac_indirectq_search_slot(ieee802154_mac_indirect_q_t *indirect_q, const ieee802154_ext_addr_t *dst_addr){
+    if (!dst_addr) {
+        return -1;
+    }
     for (int i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++)
     {
         if (memcmp(indirect_q->q[i].dst_addr.uint8,
@@ -321,6 +331,9 @@ static inline int ieee802154_mac_indirectq_get_slot(ieee802154_mac_indirect_q_t 
         return slot;
     }
     slot = ieee802154_indirectq_alloc_slot(indirect_q);
+    if (slot < 0) {
+        return slot;
+    }
     indirect_q->q[slot].dst_addr = *dst_addr;
     return slot;
 }
@@ -339,7 +352,13 @@ static inline int ieee802154_mac_map_push(ieee802154_mac_t *mac,
                               bool indirect)
 {
     // TODO: mapping short to extended
+    if ((dst_mode != IEEE802154_ADDR_MODE_EXTENDED) || (dst_addr == NULL)) {
+        return -EINVAL;
+    }
     int slot = ieee802154_mac_indirectq_get_slot(&mac->indirect_q, dst_addr);
+    if (slot < 0) {
+        return -ENOBUFS;
+    }
     int res = _enqueue_data_tx(mac, frame_type, &mac->indirect_q.q[slot], src_mode, dst_mode, dst_panid, dst_addr, msdu, msdu_handle, ack_req, indirect);
     if (res < 0)
     {
