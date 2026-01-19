@@ -307,7 +307,7 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
     eui64_t src_addr;
     uint8_t src[IEEE802154_LONG_ADDRESS_LEN];//, dst[IEEE802154_LONG_ADDRESS_LEN];
     uint8_t cmd_type, frame_type;
-    size_t mhr_len, src_len;
+    int mhr_len, src_len;
     le_uint16_t src_pan;
     int len = ieee802154_get_frame_length(&mac->submac);
     if (len <= 0) {
@@ -322,6 +322,9 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
     frame_type =((const uint8_t *)buf->iol_base)[0] & IEEE802154_FCF_TYPE_MASK;
     //dst_len = ieee802154_get_dst(buf->iol_base, dst, &dst_pan);
     src_len = ieee802154_get_src(buf->iol_base, src, &src_pan);
+    if (src_len < 0 || (size_t)src_len > sizeof(src_addr)) {
+        return;
+    }
     memcpy(&src_addr, src, src_len);
     printf("frame type: %d\n", frame_type);
     switch(frame_type)
@@ -402,7 +405,11 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac){
     puts("tick\n");
     for (unsigned i = 0; i< IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++)
     {
-        if (ieee802154_mac_frame_is_expired(mac->indirect_q.tick, *mac->indirect_q.q[i].deadline_tick))
+        ieee802154_mac_txq_t *txq = &mac->indirect_q.q[i];
+        if (ieee802154_mac_tx_empty(txq) || (txq->deadline_tick == NULL)) {
+            continue;
+        }
+        if (ieee802154_mac_frame_is_expired(mac->indirect_q.tick, *txq->deadline_tick))
         {
             _tx_finish(mac, &mac->indirect_q, i, -ETIMEDOUT);
         }
@@ -419,7 +426,7 @@ void _init_tx_q(ieee802154_mac_t *mac){
     /* 1 means free with this the count of 1 is == IEEE802154_MAC_TX_INDIRECTQ_SIZE */
     mac->indirect_q.free_mask = (1U << IEEE802154_MAC_TX_INDIRECTQ_SIZE)-1;
     mutex_init(&mac->indirect_q.lock);
-    memset(&mac->indirect_q.q, 0, sizeof(ieee802154_mac_tx_desc_t) * IEEE802154_MAC_TX_INDIRECTQ_SIZE);
+    memset(&mac->indirect_q.q, 0, sizeof(mac->indirect_q.q));
 }
 
 void ieee802154_init_mac_internal(ieee802154_mac_t *mac)
