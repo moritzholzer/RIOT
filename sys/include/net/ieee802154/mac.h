@@ -253,6 +253,7 @@ typedef void (*ieee802154_radio_cb_request_t)(ieee802154_dev_t *dev, ieee802154_
 typedef void (*ieee802154_mac_tick_t)(void *mac);
 typedef void (*ieee802154_mac_allocate_request_t)(void *mac);
 typedef void (*ieee802154_mac_rx_request_t)(void *mac);
+typedef void (*ieee802154_mac_dealloc_request_t)(void *mac, iolist_t *iolist);
 
 /**
  * @brief IEEE 802.15.4 MAC callbacks.
@@ -266,6 +267,7 @@ typedef struct {
     ieee802154_radio_cb_request_t           radio_cb_request;   /**< ieee802154_mac_handle_radio() should be dispatched */
     ieee802154_mac_tick_t                   tick_request;
     ieee802154_mac_allocate_request_t       allocate_request;
+    ieee802154_mac_dealloc_request_t        dealloc_request;
     ieee802154_mac_rx_request_t             rx_request;
     void *mac;
 } ieee802154_mac_cbs_t;

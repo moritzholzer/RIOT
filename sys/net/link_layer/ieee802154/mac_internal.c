@@ -184,7 +184,7 @@ static void _hal_init_dev(ieee802154_mac_t *mac, ieee802154_dev_type_t dev_type)
     }
 }
 
-void ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr)
+int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr)
 {
     int slot = ieee802154_mac_indirectq_search_slot(&mac->indirect_q, dst_addr);
     printf("slot sending: %d \n", slot);
@@ -193,12 +193,12 @@ void ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_a
         {
             mac->cbs.rx_request(mac);
         }
-        return;
+        return 1;
     }
     ieee802154_mac_txq_t *txq = &mac->indirect_q.q[slot];
     if (ieee802154_mac_tx_empty(txq) || mac->indirect_q.busy) {
         ieee802154_mac_handle_indirectq_auto_free(mac, &mac->indirect_q, slot);
-        return;
+        return -ENOBUFS;
     }
 
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);
@@ -208,9 +208,11 @@ void ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_a
     if (r == 0)
     {
         mac->indirect_q.busy = true;
+        return 0;
     }
     else {
         ieee802154_mac_tx_finish_current(mac, r);
+        return -EIO;
     }
 }
 
@@ -334,7 +336,9 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
         if (cmd_type == IEEE802154_CMD_DATA_REQ)
         {
             puts("data request \n");
-            ieee802154_mac_tx(mac, &src_addr);
+            if (ieee802154_mac_tx(mac, &src_addr) > 0){
+                    mac->cbs.dealloc_request(mac, buf);
+            }
         }
         break;
     default:
