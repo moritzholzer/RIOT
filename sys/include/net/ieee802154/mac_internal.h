@@ -65,7 +65,7 @@ void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status);
  */
 void ieee802154_mac_radio_attach(ieee802154_mac_t *mac);
 
-void ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr);
+int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr);
 
 /**
  * @brief Whether the TX queue is full.
