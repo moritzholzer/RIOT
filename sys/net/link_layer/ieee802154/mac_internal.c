@@ -15,6 +15,7 @@
 #include "container.h"
 #include "bhp/event.h"
 #include "ztimer.h"
+#include "mutex.h"
 
 #include "net/ieee802154/mac_internal.h"
 #include "net/ieee802154/mac.h"
@@ -571,7 +572,9 @@ void ieee802154_mac_handle_radio(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
         return;
     }
 
+    mutex_lock(&mac->submac_lock);
     _process_event(mac, ev);
+    mutex_unlock(&mac->submac_lock);
 }
 
 /* ACK timer callback */
@@ -584,12 +587,16 @@ static void _ack_timer_cb(void *arg)
 
 void ieee802154_mac_ack_timeout_fired(ieee802154_mac_t *mac)
 {
+    mutex_lock(&mac->submac_lock);
     ieee802154_submac_ack_timeout_fired(&mac->submac);
+    mutex_unlock(&mac->submac_lock);
 }
 
 void ieee802154_mac_bh_process(ieee802154_mac_t *mac)
 {
+    mutex_lock(&mac->submac_lock);
     ieee802154_submac_bh_process(&mac->submac);
+    mutex_unlock(&mac->submac_lock);
 }
 
 /* ===== Required SubMAC extern hooks ===== */
@@ -633,9 +640,11 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
     uint8_t cmd_type, frame_type;
     int mhr_len, src_len;
     le_uint16_t src_pan;
+    mutex_lock(&mac->submac_lock);
     int len = ieee802154_get_frame_length(&mac->submac);
     if (len <= 0) {
         (void)ieee802154_read_frame(&mac->submac, NULL, 0, NULL);
+        mutex_unlock(&mac->submac_lock);
         return;
     }
     // TODO: switch back to rx? or let upper layer do it??
@@ -647,6 +656,7 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
     //dst_len = ieee802154_get_dst(buf->iol_base, dst, &dst_pan);
     src_len = ieee802154_get_src(buf->iol_base, src, &src_pan);
     if (src_len < 0 || (size_t)src_len > sizeof(src_addr)) {
+        mutex_unlock(&mac->submac_lock);
         return;
     }
     memcpy(&src_addr, src, src_len);
@@ -667,8 +677,10 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
         }
         break;
     default:
+        mutex_unlock(&mac->submac_lock);
         return;
     }
+    mutex_unlock(&mac->submac_lock);
 }
 
 static void _submac_tx_done(ieee802154_submac_t *submac, int status, ieee802154_tx_info_t *info)
@@ -725,6 +737,7 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
 
 void ieee802154_mac_tick(ieee802154_mac_t *mac)
 {
+    mutex_lock(&mac->submac_lock);
     mac->indirect_q.tick++;
     puts("tick\n");
     for (unsigned i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
@@ -737,6 +750,7 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
         }
     }
     ztimer_set(ZTIMER_USEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_US);
+    mutex_unlock(&mac->submac_lock);
 }
 
 void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status)
