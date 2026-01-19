@@ -1,4 +1,16 @@
+/*
+ * SPDX-FileCopyrightText: 2026 HAW Hamburg
+ * SPDX-License-Identifier: LGPL-2.1-only
+ */
+
 #pragma once
+
+/**
+ * @{
+ *
+ * @file
+ * @author Moritz Holzer <moritz.holzer@haw-hamburg.de>
+ */
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,3 +29,5 @@ void ieee802154_mac_mlme_get(ieee802154_mac_t *mac,
 #ifdef __cplusplus
 }
 #endif
+
+/** @} */

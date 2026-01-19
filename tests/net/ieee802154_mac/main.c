@@ -14,19 +14,19 @@
 
 //static void _ev_data_confirm_handler(event_t *event);                        /**< TX Done event handler */                        /**< RX Done event handler */
 static void _ev_radio_handler(event_t *event);                      /**< CRC Error event handler */
-static void _ev_bh_request_handler(event_t *event);                     /**< BH Request event handler */
-static void _ev_ack_timeout_handler(event_t *event);                    /**< ACK Timeout event handler */
+static void _ev_bh_request_handler(event_t *event);                 /**< BH Request event handler */
+static void _ev_ack_timeout_handler(event_t *event);                /**< ACK Timeout event handler */
 static void _ev_tick_handler(event_t *event);
-static void _ev_send_handler(event_t *event);                         /**< Set RX event handler */
+static void _ev_send_handler(event_t *event);                       /**< Set RX event handler */
 static void _ev_rx_handler(event_t *event);
 
 //static event_t ev_data_confirm = { .handler = _ev_data_confirm_handler };         /**< TX Done descriptor */         /**< RX Done descriptor */
 static event_t ev_bh_request = { .handler = _ev_bh_request_handler };   /**< BH Request descriptor */
 static event_t ev_ack_timeout = { .handler = _ev_ack_timeout_handler }; /**< ACK TO descriptor */
 static event_t ev_tick = { .handler = _ev_tick_handler };
-static event_t ev_send = { .handler = _ev_send_handler };           /**< Set RX descriptor */
-static event_t ev_radio = {.handler = _ev_radio_handler };
-static event_t ev_rx    = {.handler = _ev_rx_handler};
+static event_t ev_send = { .handler = _ev_send_handler };               /**< Set RX descriptor */
+static event_t ev_radio = { .handler = _ev_radio_handler };
+static event_t ev_rx = { .handler = _ev_rx_handler };
 
 typedef struct {
     bool in_use;
@@ -61,8 +61,7 @@ static inline iolist_t *_mac_buf_alloc(void)
     mutex_lock(&buf_lock);
     for (uint8_t i = 0; i < IEEE802154_MAC_TEST_BUF_SIZE; i++) {
         mac_buf_t *p = &buf_pool[i];
-        if (!p->in_use)
-        {
+        if (!p->in_use) {
             p->in_use = true;
             p->iolist.iol_base = p->buf;
             p->iolist.iol_len = IEEE802154_FRAME_LEN_MAX;
@@ -93,15 +92,16 @@ iolist_t * _allocate(void)
     return _mac_buf_alloc();
 }
 
-static void my_confirm(void *arg, uint8_t handle, int status) {
+static void my_confirm(void *arg, uint8_t handle, int status)
+{
     (void)arg; (void)handle;
     printf("DATA confirm res=%d (%s)\n", status, strerror(-status));
 }
 
 static void my_rx(void *mac)
 {
-    (void) mac;
-    event_post(EVENT_PRIO_HIGHEST,&ev_rx);
+    (void)mac;
+    event_post(EVENT_PRIO_HIGHEST, &ev_rx);
 }
 
 static void my_ind(void *arg,
@@ -134,78 +134,89 @@ static void my_ind(void *arg,
     _mac_buf_free(&mac, buf);
 }
 
-static void _ev_tick_handler(event_t *event){
-    (void) event;
+static void _ev_tick_handler(event_t *event)
+{
+    (void)event;
     puts("ACK TIMEOUT TIMER\n");
     ieee802154_mac_tick(&mac);
 }
 
 static void my_send(void *mac)
 {
-    (void) mac;
+    (void)mac;
     event_post(EVENT_PRIO_HIGHEST, &ev_send);
 }
 
 static void my_dealloc(void *mac, iolist_t *io)
 {
     mac_buf_t *buf = container_of(io, mac_buf_t, iolist);
+
     _mac_buf_free((ieee802154_mac_t *)&mac, buf);
 }
 
-static void my_tick(void *mac){
-    (void) mac;
+static void my_tick(void *mac)
+{
+    (void)mac;
     event_post(EVENT_PRIO_HIGHEST, &ev_tick);
 }
 
-static void my_timeout(void *mac){
-    (void) mac;
+static void my_timeout(void *mac)
+{
+    (void)mac;
     puts("ACK TIMEOUT TIMER\n");
     event_post(EVENT_PRIO_HIGHEST, &ev_ack_timeout);
 }
 
-static void my_bh_cb(void *mac){
-    (void) mac;
+static void my_bh_cb(void *mac)
+{
+    (void)mac;
     event_post(EVENT_PRIO_HIGHEST, &ev_bh_request);
 }
 ieee802154_dev_t *_dev_radio_cb;
 ieee802154_trx_ev_t _st_radio_cb;
-static void my_radio_cb(ieee802154_dev_t *dev, ieee802154_trx_ev_t st){
+static void my_radio_cb(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
+{
     _dev_radio_cb = dev;
     _st_radio_cb = st;
     event_post(EVENT_PRIO_HIGHEST, &ev_radio);
 }
 
-static void _ev_radio_handler(event_t *event){
-    (void) event;
+static void _ev_radio_handler(event_t *event)
+{
+    (void)event;
     mutex_lock(&lock);
     ieee802154_mac_handle_radio(_dev_radio_cb, _st_radio_cb);
     mutex_unlock(&lock);
 }
-static void _ev_bh_request_handler(event_t *event){
-    (void) event;
+static void _ev_bh_request_handler(event_t *event)
+{
+    (void)event;
     mutex_lock(&lock);
     ieee802154_mac_bh_process(&mac);
     mutex_unlock(&lock);
 }
-static void _ev_ack_timeout_handler(event_t *event){
-    (void) event;
+static void _ev_ack_timeout_handler(event_t *event)
+{
+    (void)event;
     mutex_lock(&lock);
     puts("ACK Timeout\n");
     ieee802154_mac_ack_timeout_fired(&mac);
     mutex_unlock(&lock);
 }
-static void _ev_send_handler(event_t *event){
-    (void) event;
+static void _ev_send_handler(event_t *event)
+{
+    (void)event;
     mutex_lock(&lock);
     iolist_t *buf = _allocate();
     ieee802154_mac_send_process(&mac, buf);
     mutex_unlock(&lock);
 }
 
-static void _ev_rx_handler(event_t *event){
-    (void) event;
+static void _ev_rx_handler(event_t *event)
+{
+    (void)event;
     mutex_lock(&lock);
-    if (ieee802154_set_rx(&mac.submac) <0 ){
+    if (ieee802154_set_rx(&mac.submac) < 0) {
         printf("error switching back to rx\n");
     }
     printf("state: %d \n", ieee802154_submac_state_is_rx(&mac.submac));
@@ -217,8 +228,7 @@ static int start(int argc, char **argv)
     (void)argc;
     (void)argv;
     int res = ieee802154_mlme_start_request(&mac, CONFIG_IEEE802154_DEFAULT_CHANNEL);
-    if (res < 0)
-    {
+    if (res < 0) {
         puts("Error starting coordinator\n");
     }
     return 0;
@@ -239,13 +249,14 @@ static int poll(int argc, char **argv)
     }
 
     mutex_lock(&lock);
-    ieee802154_mac_mlme_poll(&mac, IEEE802154_ADDR_MODE_EXTENDED, CONFIG_IEEE802154_DEFAULT_PANID, addr);
+    ieee802154_mac_mlme_poll(&mac, IEEE802154_ADDR_MODE_EXTENDED, CONFIG_IEEE802154_DEFAULT_PANID,
+                             addr);
     mutex_unlock(&lock);
     return 0;
 }
 
 #define IEEE802154_LONG_ADDRESS_LEN_STR_MAX \
-    (sizeof("00:00:00:00:00:00:00:00"))
+        (sizeof("00:00:00:00:00:00:00:00"))
 
 static int print_addr(int argc, char **argv)
 {
@@ -260,7 +271,7 @@ static int print_addr(int argc, char **argv)
 }
 
 static int send(uint8_t *dst,
-               void *data , size_t len, bool indirect)
+                void *data, size_t len, bool indirect)
 {
     mutex_lock(&lock);
     iolist_t *msdu = _allocate();
@@ -270,15 +281,15 @@ static int send(uint8_t *dst,
     msdu->iol_next = NULL;
     mutex_lock(&lock);
     int res = ieee802154_mcps_data_request(&mac,
-                                  IEEE802154_ADDR_MODE_EXTENDED,
-                                  IEEE802154_ADDR_MODE_EXTENDED,
-                                  CONFIG_IEEE802154_DEFAULT_PANID,
-                                  dst,
-                                  msdu,
-                                  1,
-                                  true,
-                                  indirect);
-    if (res < 0){
+                                           IEEE802154_ADDR_MODE_EXTENDED,
+                                           IEEE802154_ADDR_MODE_EXTENDED,
+                                           CONFIG_IEEE802154_DEFAULT_PANID,
+                                           dst,
+                                           msdu,
+                                           1,
+                                           true,
+                                           indirect);
+    if (res < 0) {
         printf("error in request\n");
     }
     mutex_unlock(&lock);
@@ -298,13 +309,12 @@ static int txtsnd(int argc, char **argv)
         return 1;
     }
 
-    if ((strcmp(argv[3], "true") == 0 || (strcmp(argv[3], "false"))) == 0)
-    {
+    if ((strcmp(argv[3], "true") == 0 || (strcmp(argv[3], "false"))) == 0) {
         puts("Usage: txtsnd <long_addr> <len> <indirect (true/false)\n");
         return 1;
     }
 
-    if ((strcmp(argv[3], "true") ) == 0) {
+    if ((strcmp(argv[3], "true")) == 0) {
         indirect = true;
     }
 
@@ -352,7 +362,8 @@ static int _init(void)
     return 0;
 }
 
-int main(void){
+int main(void)
+{
     _init();
 
     char line_buf[SHELL_DEFAULT_BUFSIZE];

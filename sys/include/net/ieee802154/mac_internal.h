@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: LGPL-2.1-only
  */
 
+#pragma once
+
 /**
  * @{
  *
@@ -10,7 +12,9 @@
  * @author Moritz Holzer <moritz.holzer@haw-hamburg.de>
  */
 
-#pragma once
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "mutex.h"
 
@@ -31,7 +35,7 @@ typedef enum {
     IEEE802154_MAC_EV_RADIO_CRC_ERR,    /**< CRC error event */
     IEEE802154_MAC_EV_SUBMAC_BH,        /**< bootom half event */
     IEEE802154_MAC_EV_ACK_TIMEOUT,      /**< ACK timeout event */
-    IEEE802154_MAC_EV_TX ,                 /**< wakeup event */
+    IEEE802154_MAC_EV_TX,               /**< wakeup event */
 } ieee802154_mac_ev_t;
 
 void ieee802154_init_mac_internal(ieee802154_mac_t *mac);
@@ -111,3 +115,9 @@ int ieee802154_mac_enqueue_data_request(ieee802154_mac_t *mac,
                                         ieee802154_addr_mode_t dst_mode,
                                         uint16_t *dst_panid,
                                         const void *dst_addr);
+
+#ifdef __cplusplus
+}
+#endif
+
+/** @} */

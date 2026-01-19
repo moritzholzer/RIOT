@@ -1,3 +1,15 @@
+/*
+ * SPDX-FileCopyrightText: 2026 HAW Hamburg
+ * SPDX-License-Identifier: LGPL-2.1-only
+ */
+
+/**
+ * @{
+ *
+ * @file
+ * @author Moritz Holzer <moritz.holzer@haw-hamburg.de>
+ */
+
 #include "random.h"
 #include "assert.h"
 #include "net/ieee802154/mac.h"
@@ -193,7 +205,7 @@ static const ieee802154_pib_attr_entry_t ieee802154_pib_attr[IEEE802154_PIB_ATTR
     [IEEE802154_PIB_PAN_ID] = {
         .type = IEEE802154_PIB_TYPE_U16, .access = IEEE802154_PIB_ACC_RW,
         .offset = IEEE802154_PIB_OFF(PAN_ID), .size = IEEE802154_PIB_SIZE(PAN_ID),
-        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFFU},//CONFIG_IEEE802154_DEFAULT_PANID },
+        .def = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFFU },//CONFIG_IEEE802154_DEFAULT_PANID },
         .min = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0 },
         .max = (ieee802154_pib_value_t){ .type = IEEE802154_PIB_TYPE_U16, .v.u16 = 0xFFFFU }
     },
@@ -292,6 +304,7 @@ static inline uint8_t *ieee802154_pib_ptr_from_mac(ieee802154_mac_t *mac,
                                                    const ieee802154_pib_attr_entry_t *e)
 {
     ieee802154_pib_t *p = &mac->pib;
+
     return (uint8_t *)((uint8_t *)p + (ptrdiff_t)e->offset);
 }
 
@@ -299,6 +312,7 @@ static inline const uint8_t *ieee802154_pib_ptr_const_from_mac(const ieee802154_
                                                                const ieee802154_pib_attr_entry_t *e)
 {
     const ieee802154_pib_t *p = &mac->pib;
+
     return (const uint8_t *)((const uint8_t *)p + (ptrdiff_t)e->offset);
 }
 
@@ -308,8 +322,8 @@ static inline bool _pib_can_write(ieee802154_pib_access_t a)
 }
 
 void ieee802154_mac_mlme_set(ieee802154_mac_t *mac,
-                            ieee802154_pib_attr_t attr,
-                            const ieee802154_pib_value_t *in)
+                             ieee802154_pib_attr_t attr,
+                             const ieee802154_pib_value_t *in)
 {
 
     mutex_lock(&mac->pib_lock);
@@ -319,33 +333,33 @@ void ieee802154_mac_mlme_set(ieee802154_mac_t *mac,
 
     switch (e->type) {
     case IEEE802154_PIB_TYPE_BOOL:
-        assert (e->size == sizeof(bool));
+        assert(e->size == sizeof(bool));
         memcpy(dst, &in->v.b, sizeof(in->v.b));
         break;
 
     case IEEE802154_PIB_TYPE_U8:
-        assert (e->size == sizeof(uint8_t));
+        assert(e->size == sizeof(uint8_t));
         memcpy(dst, &in->v.u8, sizeof(in->v.u8));
         break;
 
     case IEEE802154_PIB_TYPE_U16:
-        assert (e->size == sizeof(uint16_t));
+        assert(e->size == sizeof(uint16_t));
         memcpy(dst, &in->v.u16, sizeof(in->v.u16));
         break;
 
     case IEEE802154_PIB_TYPE_EUI64:
-        assert (e->size == sizeof(eui64_t));
+        assert(e->size == sizeof(eui64_t));
         memcpy(dst, &in->v.ext_addr, sizeof(in->v.ext_addr));
         break;
 
     case IEEE802154_PIB_TYPE_NUI16:
-        assert (e->size == 2);
+        assert(e->size == 2);
         memcpy(dst, &in->v.short_addr, sizeof(in->v.short_addr));
         break;
 
     case IEEE802154_PIB_TYPE_BYTES:
         assert(e->size == sizeof(ieee802154_octets_t));
-        assert (e->size == sizeof(ieee802154_octets_t));
+        assert(e->size == sizeof(ieee802154_octets_t));
         memcpy(dst, &in->v.bytes, sizeof(in->v.bytes));
         break;
     }
@@ -355,8 +369,8 @@ void ieee802154_mac_mlme_set(ieee802154_mac_t *mac,
 
 // TODO: return value out of bound
 void ieee802154_mac_mlme_get(ieee802154_mac_t *mac,
-                                             ieee802154_pib_attr_t attr,
-                                             ieee802154_pib_value_t *out)
+                             ieee802154_pib_attr_t attr,
+                             ieee802154_pib_value_t *out)
 {
 
     mutex_lock(&mac->pib_lock);
@@ -366,39 +380,40 @@ void ieee802154_mac_mlme_get(ieee802154_mac_t *mac,
 
     switch (e->type) {
     case IEEE802154_PIB_TYPE_BOOL:
-        assert (e->size == sizeof(bool));
+        assert(e->size == sizeof(bool));
         memcpy(&out->v.b, src, sizeof(out->v.b));
         break;
 
     case IEEE802154_PIB_TYPE_U8:
-        assert (e->size == sizeof(uint8_t));
+        assert(e->size == sizeof(uint8_t));
         memcpy(&out->v.u8, src, sizeof(out->v.u8));
         break;
 
     case IEEE802154_PIB_TYPE_U16:
-        assert (e->size == sizeof(uint16_t));
+        assert(e->size == sizeof(uint16_t));
         memcpy(&out->v.u16, src, sizeof(out->v.u16));
         break;
 
     case IEEE802154_PIB_TYPE_EUI64:
-        assert (e->size == sizeof(eui64_t));
+        assert(e->size == sizeof(eui64_t));
         memcpy(&out->v.ext_addr, src, sizeof(out->v.ext_addr));
         break;
 
     case IEEE802154_PIB_TYPE_NUI16:
-        assert (e->size == 2);
+        assert(e->size == 2);
         memcpy(&out->v.short_addr, src, sizeof(out->v.short_addr));
         break;
 
     case IEEE802154_PIB_TYPE_BYTES:
-        assert (e->size == sizeof(ieee802154_octets_t));
+        assert(e->size == sizeof(ieee802154_octets_t));
         memcpy(&out->v.bytes, src, sizeof(out->v.bytes));
         break;
     }
     mutex_unlock(&mac->pib_lock);
 }
 
-void ieee802154_mac_pib_init(ieee802154_mac_t *mac){
+void ieee802154_mac_pib_init(ieee802154_mac_t *mac)
+{
     DEBUG("Internal MAC PIB init\n");
     mutex_init(&mac->pib_lock);
     for (unsigned i = 0; i < (uint8_t)IEEE802154_PIB_ATTR_COUNT; i++) {
@@ -420,3 +435,5 @@ void ieee802154_mac_pib_init(ieee802154_mac_t *mac){
     pib_value.v.u8 = rand_u8();
     ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &pib_value);
 }
+
+/** @} */
