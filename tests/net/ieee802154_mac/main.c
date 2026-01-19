@@ -35,7 +35,6 @@ typedef struct {
 } mac_buf_t;
 
 ieee802154_mac_t mac;
-mutex_t lock;
 mutex_t buf_lock;
 mac_buf_t buf_pool[IEEE802154_MAC_TEST_BUF_SIZE];
 
@@ -184,43 +183,33 @@ static void my_radio_cb(ieee802154_dev_t *dev, ieee802154_trx_ev_t st)
 static void _ev_radio_handler(event_t *event)
 {
     (void)event;
-    mutex_lock(&lock);
     ieee802154_mac_handle_radio(_dev_radio_cb, _st_radio_cb);
-    mutex_unlock(&lock);
 }
 static void _ev_bh_request_handler(event_t *event)
 {
     (void)event;
-    mutex_lock(&lock);
     ieee802154_mac_bh_process(&mac);
-    mutex_unlock(&lock);
 }
 static void _ev_ack_timeout_handler(event_t *event)
 {
     (void)event;
-    mutex_lock(&lock);
     puts("ACK Timeout\n");
     ieee802154_mac_ack_timeout_fired(&mac);
-    mutex_unlock(&lock);
 }
 static void _ev_send_handler(event_t *event)
 {
     (void)event;
-    mutex_lock(&lock);
     iolist_t *buf = _allocate();
     ieee802154_mac_send_process(&mac, buf);
-    mutex_unlock(&lock);
 }
 
 static void _ev_rx_handler(event_t *event)
 {
     (void)event;
-    mutex_lock(&lock);
     if (ieee802154_set_rx(&mac.submac) < 0) {
         printf("error switching back to rx\n");
     }
     printf("state: %d \n", ieee802154_submac_state_is_rx(&mac.submac));
-    mutex_unlock(&lock);
 }
 
 static int start(int argc, char **argv)
@@ -248,10 +237,8 @@ static int poll(int argc, char **argv)
         return 1;
     }
 
-    mutex_lock(&lock);
     ieee802154_mac_mlme_poll(&mac, IEEE802154_ADDR_MODE_EXTENDED, CONFIG_IEEE802154_DEFAULT_PANID,
                              addr);
-    mutex_unlock(&lock);
     return 0;
 }
 
@@ -273,13 +260,10 @@ static int print_addr(int argc, char **argv)
 static int send(uint8_t *dst,
                 void *data, size_t len, bool indirect)
 {
-    mutex_lock(&lock);
     iolist_t *msdu = _allocate();
-    mutex_unlock(&lock);
     msdu->iol_base = data;
     msdu->iol_len = len;
     msdu->iol_next = NULL;
-    mutex_lock(&lock);
     int res = ieee802154_mcps_data_request(&mac,
                                            IEEE802154_ADDR_MODE_EXTENDED,
                                            IEEE802154_ADDR_MODE_EXTENDED,
@@ -292,7 +276,6 @@ static int send(uint8_t *dst,
     if (res < 0) {
         printf("error in request\n");
     }
-    mutex_unlock(&lock);
 
     return 0;
 }
@@ -330,7 +313,7 @@ static int txtsnd(int argc, char **argv)
 
 static int _init(void)
 {
-    mutex_init(&lock);
+    mutex_init(&buf_lock);
     memset(buf_pool, 0, sizeof(mac_buf_t) * IEEE802154_MAC_TEST_BUF_SIZE);
     ieee802154_mac_cbs_t cbs = {
         .data_confirm = my_confirm,
