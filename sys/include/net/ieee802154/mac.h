@@ -174,6 +174,9 @@ typedef enum {
     IEEE802154_PIB_TYPE_BYTES   /**< octets in  ieee802154_octets_t*/
 } ieee802154_pib_type_t;
 
+/**
+ * @brief IEEE 802.15.4 device type identifier.
+ */
 typedef enum {
     IEEE802154_DEV_TYPE_CC2538_RF,
     IEEE802154_DEV_TYPE_NRF802154,
@@ -183,12 +186,18 @@ typedef enum {
     IEEE802154_DEV_TYPE_ESP_IEEE802154,
 } ieee802154_dev_type_t;
 
+/**
+ * @brief IEEE 802.15.4 address mode.
+ */
 typedef enum {
     IEEE802154_ADDR_MODE_NONE,
     IEEE802154_ADDR_MODE_SHORT,
     IEEE802154_ADDR_MODE_EXTENDED
 } ieee802154_addr_mode_t;
 
+/**
+ * @brief IEEE 802.15.4 address container.
+ */
 typedef struct {
     ieee802154_addr_mode_t type;
     union {
@@ -197,6 +206,9 @@ typedef struct {
     } v;
 } ieee802154_addr_t;
 
+/**
+ * @brief IEEE 802.15.4 PIB attribute value.
+ */
 typedef struct {
     ieee802154_pib_type_t type;
     union {
@@ -209,11 +221,17 @@ typedef struct {
     } v;
 } ieee802154_pib_value_t;
 
+/**
+ * @brief IEEE 802.15.4 PIB attribute access type.
+ */
 typedef enum {
     IEEE802154_PIB_ACC_RW,
     IEEE802154_PIB_ACC_RO
 } ieee802154_pib_access_t;
 
+/**
+ * @brief IEEE 802.15.4 PIB attribute entry metadata.
+ */
 typedef struct {
     ieee802154_pib_type_t type;
     ieee802154_pib_access_t access;
@@ -231,7 +249,7 @@ typedef struct {
  */
 typedef void (*ieee802154_mcps_data_confirm_cb_t)(void *mac, uint8_t handle, int status);
 
-/*t i*
+/**
  * @brief IEEE 802.15.4 MAC MCPS-DATA.indication callback.
  */
 typedef void (*ieee802154_mcps_data_indication_cb_t)(void *mac, iolist_t *msdu,
@@ -239,32 +257,62 @@ typedef void (*ieee802154_mcps_data_indication_cb_t)(void *mac, iolist_t *msdu,
 
 /* === MLME confirm callback types === */
 
+/**
+ * @brief IEEE 802.15.4 MAC MLME-SET.confirm callback.
+ */
 typedef void (*ieee802154_mlme_set_confirm_cb_t)(void *mac,
                                                  uint8_t handle,
                                                  int status,
                                                  ieee802154_pib_attr_t attr);
 
+/**
+ * @brief IEEE 802.15.4 MAC MLME-GET.confirm callback.
+ */
 typedef void (*ieee802154_mlme_get_confirm_cb_t)(void *mac,
                                                  uint8_t handle,
                                                  int status,
                                                  ieee802154_pib_attr_t attr,
                                                  ieee802154_pib_value_t value);
 
+/**
+ * @brief IEEE 802.15.4 MAC MLME-START.confirm callback.
+ */
 typedef void (*ieee802154_mlme_start_confirm_cb_t)(void *mac,
                                                    uint8_t handle,
                                                    int status);
 
+/**
+ * @brief IEEE 802.15.4 MAC ACK timeout callback.
+ */
 typedef void (*ieee802154_mac_ack_timeout_fired_cb_t)(void *mac);
 
+/**
+ * @brief IEEE 802.15.4 MAC bottom-half request callback.
+ */
 typedef void (*ieee802154_mac_bh_request_cb_t)(void *mac);
 
 /* === RADIO callbacks === */
+/**
+ * @brief IEEE 802.15.4 MAC radio event callback.
+ */
 typedef void (*ieee802154_radio_cb_request_t)(ieee802154_dev_t *dev, ieee802154_trx_ev_t st);
 
 /* === Transmission callbacks === */
+/**
+ * @brief IEEE 802.15.4 MAC tick callback.
+ */
 typedef void (*ieee802154_mac_tick_t)(void *mac);
+/**
+ * @brief IEEE 802.15.4 MAC allocate request callback.
+ */
 typedef void (*ieee802154_mac_allocate_request_t)(void *mac);
+/**
+ * @brief IEEE 802.15.4 MAC RX request callback.
+ */
 typedef void (*ieee802154_mac_rx_request_t)(void *mac);
+/**
+ * @brief IEEE 802.15.4 MAC deallocation request callback.
+ */
 typedef void (*ieee802154_mac_dealloc_request_t)(void *mac, iolist_t *iolist);
 
 /**
@@ -277,14 +325,17 @@ typedef struct {
     ieee802154_mac_ack_timeout_fired_cb_t ack_timeout;          /**< ieee802154_mac_ack_timeout_fired() should be dispatched */
     ieee802154_mac_bh_request_cb_t bh_request;                  /**< ieee802154_mac_bh_process() should be dispatched */
     ieee802154_radio_cb_request_t radio_cb_request;             /**< ieee802154_mac_handle_radio() should be dispatched */
-    ieee802154_mac_tick_t tick_request;
-    ieee802154_mac_allocate_request_t allocate_request;
-    ieee802154_mac_dealloc_request_t dealloc_request;
-    ieee802154_mac_rx_request_t rx_request;
+    ieee802154_mac_tick_t tick_request;                         /**< ieee802154_mac_tick() should be dispatched */
+    ieee802154_mac_allocate_request_t allocate_request;         /**< allocate TX queue entry */
+    ieee802154_mac_dealloc_request_t dealloc_request;           /**< release TX queue entry */
+    ieee802154_mac_rx_request_t rx_request;                     /**< RX request from MAC */
     void *mac;
 } ieee802154_mac_cbs_t;
 
 
+/**
+ * @brief IEEE 802.15.4 MAC TX descriptor.
+ */
 typedef struct {
     bool in_use;                                    /**< wheather ring buffer element is in use */
     uint8_t handle;                                 /**< the MSDU handle */
@@ -296,6 +347,9 @@ typedef struct {
     iolist_t *iol_msdu;                             /**< iolist nodes */
 } ieee802154_mac_tx_desc_t;
 
+/**
+ * @brief IEEE 802.15.4 MAC TX queue.
+ */
 typedef struct {
     ieee802154_mac_tx_desc_t q[IEEE802154_MAC_TXQ_LEN]; /**< outgoing queue */
     eui64_t dst_addr;
@@ -305,6 +359,9 @@ typedef struct {
     uint16_t *deadline_tick;
 } ieee802154_mac_txq_t;
 
+/**
+ * @brief IEEE 802.15.4 MAC indirect transmission queue.
+ */
 typedef struct {
     ieee802154_mac_txq_t q[IEEE802154_MAC_TX_INDIRECTQ_SIZE];
     ieee802154_mac_txq_t *current_txq;
@@ -336,22 +393,28 @@ typedef struct {
 /* === Function that has to be dispatched and called on callbacks */
 
 /**
- * Has to ba called from thread context when ieee802154_mac_ack_timeout_fired_cb_t is called
+ * @brief Has to be called from thread context when ieee802154_mac_ack_timeout_fired_cb_t is called.
  */
 void ieee802154_mac_ack_timeout_fired(ieee802154_mac_t *mac);
 
 /**
- * @brief Has to be called from thread context when ieee802154_mac_bh_request_cb_t is called
+ * @brief Has to be called from thread context when ieee802154_mac_bh_request_cb_t is called.
  */
 void ieee802154_mac_bh_process(ieee802154_mac_t *mac);
 
 /**
- * @brief Hast to be called from thread context when ieeee802154_radio_cb_request_t is called
+ * @brief Has to be called from thread context when ieee802154_radio_cb_request_t is called.
  */
 void ieee802154_mac_handle_radio(ieee802154_dev_t *dev, ieee802154_trx_ev_t st);
 
+/**
+ * @brief Process pending TX queue entries.
+ */
 void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf);
 
+/**
+ * @brief Handle periodic MAC tick.
+ */
 void ieee802154_mac_tick(ieee802154_mac_t *mac);
 
 /**
@@ -360,14 +423,29 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac);
 void ieee802154_mac_init(ieee802154_mac_t *mac,
                          const ieee802154_mac_cbs_t *cbs);
 
+/**
+ * @brief Issue a MAC scan request.
+ */
 int ieee802154_mac_mlme_scan_request(void);
+/**
+ * @brief Issue a MAC MLME-SET request.
+ */
 void ieee802154_mac_mlme_set_request(ieee802154_mac_t *mac,
                                      ieee802154_pib_attr_t attr,
                                      const ieee802154_pib_value_t *in);
+/**
+ * @brief Issue a MAC MLME-GET request.
+ */
 void ieee802154_mac_mlme_get_request(ieee802154_mac_t *mac,
                                      ieee802154_pib_attr_t attr,
                                      ieee802154_pib_value_t *out);
+/**
+ * @brief Issue a MAC MLME-START request.
+ */
 int ieee802154_mlme_start_request(ieee802154_mac_t *mac, uint16_t channel);
+/**
+ * @brief Issue a MAC MCPS-DATA request.
+ */
 int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  ieee802154_addr_mode_t src_mode,
                                  ieee802154_addr_mode_t dst_mode,
@@ -377,11 +455,26 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  uint8_t msdu_handle,
                                  bool ack_req,
                                  bool indirect);
+/**
+ * @brief Issue a MAC MLME-ASSOCIATE request.
+ */
 int ieee802154_mac_mlme_associate(void);
+/**
+ * @brief Issue a MAC MLME-POLL request.
+ */
 int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord_mode,
                              uint16_t coord_panid, const void *coord_addr);
+/**
+ * @brief Issue a MAC MCPS-DATA request using the queued descriptor.
+ */
 int ieee802154_mac_mcps_data(void);
+/**
+ * @brief Issue a MAC MCPS-RESET request.
+ */
 int ieee802154_mac_mcps_reset(void);
+/**
+ * @brief Issue a MAC MLME-PURGE request.
+ */
 int ieee802154_mac_mlme_purge(void);
 
 #ifdef __cplusplus
