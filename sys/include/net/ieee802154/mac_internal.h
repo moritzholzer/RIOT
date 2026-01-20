@@ -101,6 +101,12 @@ int ieee802154_indirectq_alloc_slot(ieee802154_mac_indirect_q_t *indirect_q);
  * @brief Free a slot in the indirect queue.
  */
 void ieee802154_indirectq_free_slot(ieee802154_mac_indirect_q_t *indirect_q, uint8_t slot);
+
+/**
+ * @brief Whether if indirect queue is empty
+ */
+bool ieee802154_indirectq_empty(const ieee802154_mac_indirect_q_t *indirect_q);
+
 /**
  * @brief Get the deadline tick for indirect transmission.
  */

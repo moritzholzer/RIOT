@@ -8,7 +8,7 @@
  *
  * @file
  * @author Moritz Holzer <moritz.holzer@haw-hamburg.de>
- */d
+ */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -17,11 +17,11 @@
 
 #include "isrpipe.h"
 #include "net/ieee802154/mac.h"
-#include "net/ieee80215dd/mac_pib.h"
+#include "net/ieee802154/mac_pib.h"
 #include "net/ieee802154/mac_internal.h"
 
-#define ENABLE_DEBUG 1d
-#include "debug.h"d
+#define ENABLE_DEBUG 1
+#include "debug.h"
 
 
 
@@ -86,24 +86,29 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  bool ack_req,
                                  bool indirect)
 {
+    mutex_lock(&mac->submac_lock);
     int res = ieee802154_mac_map_push(mac, IEEE802154_FCF_TYPE_DATA, src_mode, dst_mode, &dst_panid,
                                       dst_addr, msdu, &msdu_handle, ack_req, indirect);
 
     if (res < 0) {
+        mutex_unlock(&mac->submac_lock);
         return res;
     }
     if (!indirect) {
         ieee802154_mac_tx(mac, dst_addr);
     }
+    mutex_unlock(&mac->submac_lock);
     return 0;
 }
 
 int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord_mode,
                              uint16_t coord_panid, const void *coord_addr)
 {
+    mutex_lock(&mac->submac_lock);
     int res = ieee802154_mac_enqueue_data_request(mac, coord_mode, &coord_panid, coord_addr);
 
     ieee802154_mac_tx(mac, coord_addr);
+    mutex_unlock(&mac->submac_lock);
     return res;
 }
 
