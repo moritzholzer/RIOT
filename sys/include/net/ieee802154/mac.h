@@ -47,6 +47,11 @@ extern "C" {
 #define IEEE802154_MAC_TICK_INTERVAL_US     (1000U)
 #endif
 
+/* In Symbols  then the timeout is symbol*symboltime in 2,4ghz this is 1s*/
+#ifndef IEEE802154_MAC_FRAME_TIMEOUT
+#define IEEE802154_MAC_FRAME_TIMEOUT        (62500U)
+#endif
+
 #ifndef IEEE802154_MAC_TX_INDIRECTQ_SIZE
 #define IEEE802154_MAC_TX_INDIRECTQ_SIZE     (4)
 #endif

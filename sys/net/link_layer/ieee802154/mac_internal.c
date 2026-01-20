@@ -142,16 +142,20 @@ void ieee802154_indirectq_free_slot(ieee802154_mac_indirect_q_t *indirect_q, uin
     indirect_q->free_mask |= (1U << slot);
 }
 
+bool ieee802154_indirectq_empty(const ieee802154_mac_indirect_q_t *indirect_q)
+{
+    /* all slots free */
+    return indirect_q->free_mask == ((1U << IEEE802154_MAC_TX_INDIRECTQ_SIZE) - 1U);
+}
+
+
 uint16_t ieee802154_indirect_get_deadline(ieee802154_mac_t *mac)
 {
-    ieee802154_pib_value_t value;
-
-    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_TRANSACTION_PERSISTENCE_TIME, &value);
-    uint16_t unit_period_us = value.v.u16 * mac->sym_us;
+    uint16_t unit_period_us = IEEE802154_MAC_FRAME_TIMEOUT * mac->sym_us;
     /* round up to handle too early timeouts */
     uint16_t unit_period_ticks =
         (unit_period_us + IEEE802154_MAC_TICK_INTERVAL_US - 1U) / IEEE802154_MAC_TICK_INTERVAL_US;
-    return (mac->indirect_q.tick + (unit_period_ticks * value.v.u16));
+    return (mac->indirect_q.tick + (unit_period_ticks * IEEE802154_MAC_FRAME_TIMEOUT));
 }
 
 bool ieee802154_mac_frame_is_expired(uint16_t now_tick, uint16_t deadline_tick)
@@ -174,10 +178,8 @@ void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
     (void)dst_addr;
     bool any_pending = pending;
     if (!pending) {
-        uint32_t full_mask = (1U << IEEE802154_MAC_TX_INDIRECTQ_SIZE) - 1U;
-        any_pending = (mac->indirect_q.free_mask != full_mask);
+        any_pending = !ieee802154_indirectq_empty(&mac->indirect_q);
     }
-    printf("pending %u", any_pending);
     ieee802154_radio_config_src_address_match(dev, IEEE802154_SRC_MATCH_EN, &any_pending);
 #  endif
 #else
@@ -647,7 +649,6 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
         mutex_unlock(&mac->submac_lock);
         return;
     }
-    // TODO: switch back to rx? or let upper layer do it??
     ieee802154_rx_info_t info;
     buf->iol_len = len;
     (void)ieee802154_read_frame(&mac->submac, buf->iol_base, buf->iol_len, &info);
@@ -687,25 +688,7 @@ static void _submac_tx_done(ieee802154_submac_t *submac, int status, ieee802154_
 {
     (void)info;
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
-
-    int res;
-    switch (status) {
-    case TX_STATUS_SUCCESS:
-    case TX_STATUS_FRAME_PENDING:
-        res = 0;
-        break;
-    case TX_STATUS_NO_ACK:
-        res = -ETIMEDOUT;
-        break;
-    case TX_STATUS_MEDIUM_BUSY:
-        res = -EBUSY;
-        break;
-    default:
-        res = -EIO;
-        break;
-    }
-
-    ieee802154_mac_tx_finish_current(mac, res);
+    ieee802154_mac_tx_finish_current(mac, status);
 }
 
 static const ieee802154_submac_cb_t _submac_cbs = {
@@ -722,11 +705,11 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     }
 
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(&indirect_q->q[slot]);
-    if (mac->cbs.data_confirm) {
+    if ((d->handle != 0xFF) && mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
     }
-    if (mac->is_coordinator ||  ((status == 0) && (d->handle == 0xFF))) {
-        puts("rx_request\n");
+    printf("frame pending: %u\n", status);
+    if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) ) {
         mac->cbs.rx_request(mac);
     }
     d->in_use = false;
@@ -739,13 +722,13 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
 {
     mutex_lock(&mac->submac_lock);
     mac->indirect_q.tick++;
-    puts("tick\n");
     for (unsigned i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
         ieee802154_mac_txq_t *txq = &mac->indirect_q.q[i];
         if (ieee802154_mac_tx_empty(txq) || (txq->deadline_tick == NULL)) {
             continue;
         }
         if (ieee802154_mac_frame_is_expired(mac->indirect_q.tick, *txq->deadline_tick)) {
+            printf("is expired\n");
             _tx_finish(mac, &mac->indirect_q, i, -ETIMEDOUT);
         }
     }
@@ -808,6 +791,7 @@ void ieee802154_init_mac_internal(ieee802154_mac_t *mac)
     mac->tick.arg = mac;
     mac->ack_timer.callback = _ack_timer_cb;
     mac->ack_timer.arg = mac;
+    ztimer_set(ZTIMER_USEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_US);
     mutex_unlock(&mac->submac_lock);
 }
 

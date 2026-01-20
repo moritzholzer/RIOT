@@ -1,14 +1,15 @@
+#include <ctype.h>
+#include <stdio.h>
+
+#include "event.h"
+#include "event/thread.h"
+#include "luid.h"
 #include "net/eui_provider.h"
 #include "net/ieee802154.h"
 #include "net/ieee802154/mac.h"
 #include "net/ieee802154/radio.h"
-#include "luid.h"
-#include <stdio.h>
-#include <ctype.h>
-#include "event.h"
-#include "shell.h"
 #include "net/l2util.h"
-#include "event/thread.h"
+#include "shell.h"
 
 #define IEEE802154_MAC_TEST_BUF_SIZE (16U)
 
@@ -94,7 +95,10 @@ iolist_t * _allocate(void)
 static void my_confirm(void *arg, uint8_t handle, int status)
 {
     (void)arg; (void)handle;
-    printf("DATA confirm res=%d (%s)\n", status, strerror(-status));
+    printf("DATA confirm res=%d (%s) with handle: %d\n", status, strerror(-status), handle);
+    if (handle < IEEE802154_MAC_TEST_BUF_SIZE) {
+        _mac_buf_free(&mac, &buf_pool[handle]);
+    }
 }
 
 static void my_rx(void *mac)
@@ -136,7 +140,6 @@ static void my_ind(void *arg,
 static void _ev_tick_handler(event_t *event)
 {
     (void)event;
-    puts("ACK TIMEOUT TIMER\n");
     ieee802154_mac_tick(&mac);
 }
 
@@ -162,7 +165,6 @@ static void my_tick(void *mac)
 static void my_timeout(void *mac)
 {
     (void)mac;
-    puts("ACK TIMEOUT TIMER\n");
     event_post(EVENT_PRIO_HIGHEST, &ev_ack_timeout);
 }
 
@@ -193,23 +195,28 @@ static void _ev_bh_request_handler(event_t *event)
 static void _ev_ack_timeout_handler(event_t *event)
 {
     (void)event;
-    puts("ACK Timeout\n");
     ieee802154_mac_ack_timeout_fired(&mac);
 }
 static void _ev_send_handler(event_t *event)
 {
     (void)event;
     iolist_t *buf = _allocate();
+    if (!buf) {
+        puts("no RX buffer available\n");
+        return;
+    }
     ieee802154_mac_send_process(&mac, buf);
 }
 
 static void _ev_rx_handler(event_t *event)
 {
     (void)event;
+    // mutex_lock(&mac.submac_lock);
     if (ieee802154_set_rx(&mac.submac) < 0) {
         printf("error switching back to rx\n");
     }
     printf("state: %d \n", ieee802154_submac_state_is_rx(&mac.submac));
+    // mutex_unlock(&mac.submac_lock);
 }
 
 static int start(int argc, char **argv)
@@ -261,20 +268,28 @@ static int send(uint8_t *dst,
                 void *data, size_t len, bool indirect)
 {
     iolist_t *msdu = _allocate();
+    if (!msdu) {
+        puts("no TX buffer available\n");
+        return -ENOBUFS;
+    }
     msdu->iol_base = data;
     msdu->iol_len = len;
     msdu->iol_next = NULL;
+    mac_buf_t *msdu_buf = container_of(msdu, mac_buf_t, iolist);
+    uint8_t handle = (uint8_t)(msdu_buf - buf_pool);
     int res = ieee802154_mcps_data_request(&mac,
                                            IEEE802154_ADDR_MODE_EXTENDED,
                                            IEEE802154_ADDR_MODE_EXTENDED,
                                            CONFIG_IEEE802154_DEFAULT_PANID,
                                            dst,
                                            msdu,
-                                           1,
+                                           handle,
                                            true,
                                            indirect);
     if (res < 0) {
         printf("error in request\n");
+        _mac_buf_free(&mac, msdu_buf);
+        return res;
     }
 
     return 0;
@@ -292,7 +307,7 @@ static int txtsnd(int argc, char **argv)
         return 1;
     }
 
-    if ((strcmp(argv[3], "true") == 0 || (strcmp(argv[3], "false"))) == 0) {
+    if (!((strcmp(argv[3], "true") == 0 ) || (strcmp(argv[3], "false") == 0)) ) {
         puts("Usage: txtsnd <long_addr> <len> <indirect (true/false)\n");
         return 1;
     }
