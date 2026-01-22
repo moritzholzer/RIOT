@@ -39,6 +39,21 @@ typedef enum {
 } ieee802154_mac_ev_t;
 
 /**
+ * @brief IEEE 802.15.4 MAC FSM events.
+ */
+typedef enum {
+    IEEE802154_MAC_FSM_EV_SCAN_START,
+    IEEE802154_MAC_FSM_EV_SCAN_DONE,
+    IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX,
+    IEEE802154_MAC_FSM_EV_ASSOC_RES_RX,
+    IEEE802154_MAC_FSM_EV_DISASSOC_RX,
+    IEEE802154_MAC_FSM_EV_COORD_START,
+    IEEE802154_MAC_FSM_EV_TX_REQUEST,
+    IEEE802154_MAC_FSM_EV_SLEEP,
+    IEEE802154_MAC_FSM_EV_WAKE,
+} ieee802154_mac_fsm_ev_t;
+
+/**
  * @brief Initialize internal MAC state.
  */
 void ieee802154_init_mac_internal(ieee802154_mac_t *mac);
@@ -167,6 +182,11 @@ int ieee802154_mac_enqueue_beacon_request(ieee802154_mac_t *mac);
  * @brief Process the active scan timer in thread context.
  */
 void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac);
+
+/**
+ * @brief Handle a MAC FSM event and apply state transitions.
+ */
+int ieee802154_mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev);
 
 #ifdef __cplusplus
 }

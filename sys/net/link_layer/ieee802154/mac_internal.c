@@ -53,6 +53,8 @@ extern void auto_init_event_thread(void);
         IS_USED(MODULE_KW2XRF) + \
         IS_USED(MODULE_ESP_IEEE802154)
 
+static void _scan_timer_process_locked(ieee802154_mac_t *mac);
+
 static uint8_t ieee80214_addr_len_from_mode(ieee802154_addr_mode_t mode)
 {
     switch (mode) {
@@ -65,6 +67,233 @@ static uint8_t ieee80214_addr_len_from_mode(ieee802154_addr_mode_t mode)
     default:
         return 0;
     }
+}
+
+static const char *const _mac_fsm_ev_str[] = {
+    [IEEE802154_MAC_FSM_EV_SCAN_START] = "SCAN_START",
+    [IEEE802154_MAC_FSM_EV_SCAN_DONE] = "SCAN_DONE",
+    [IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX] = "ASSOC_REQ_RX",
+    [IEEE802154_MAC_FSM_EV_ASSOC_RES_RX] = "ASSOC_RES_RX",
+    [IEEE802154_MAC_FSM_EV_DISASSOC_RX] = "DISASSOC_RX",
+    [IEEE802154_MAC_FSM_EV_COORD_START] = "COORD_START",
+    [IEEE802154_MAC_FSM_EV_TX_REQUEST] = "TX_REQUEST",
+    [IEEE802154_MAC_FSM_EV_SLEEP] = "SLEEP",
+    [IEEE802154_MAC_FSM_EV_WAKE] = "WAKE",
+};
+
+static const char *const _mac_fsm_state_str[] = {
+    [IEEE802154_MAC_STATE_IDLE] = "IDLE",
+    [IEEE802154_MAC_STATE_SCAN_ACTIVE] = "SCAN_ACTIVE",
+    [IEEE802154_MAC_STATE_ASSOCIATING] = "ASSOCIATING",
+    [IEEE802154_MAC_STATE_COORDINATOR] = "COORDINATOR",
+    [IEEE802154_MAC_STATE_DEVICE] = "DEVICE",
+    [IEEE802154_MAC_STATE_SLEEP] = "SLEEP",
+    [IEEE802154_MAC_STATE_INVALID] = "INVALID",
+};
+
+static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
+                                                  ieee802154_mac_fsm_ev_t ev)
+{
+    switch (ev) {
+    case IEEE802154_MAC_FSM_EV_SCAN_START:
+        if (mac->scan_req == NULL) {
+            return IEEE802154_MAC_STATE_INVALID;
+        }
+        mac->state_before_scan = mac->state;
+        return IEEE802154_MAC_STATE_SCAN_ACTIVE;
+    case IEEE802154_MAC_FSM_EV_COORD_START:
+    case IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX:
+        return IEEE802154_MAC_STATE_COORDINATOR;
+    case IEEE802154_MAC_FSM_EV_ASSOC_RES_RX:
+        return IEEE802154_MAC_STATE_DEVICE;
+    case IEEE802154_MAC_FSM_EV_TX_REQUEST:
+        return IEEE802154_MAC_STATE_IDLE;
+    case IEEE802154_MAC_FSM_EV_SLEEP:
+        return IEEE802154_MAC_STATE_SLEEP;
+    default:
+        return IEEE802154_MAC_STATE_INVALID;
+    }
+}
+
+static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
+                                                         ieee802154_mac_fsm_ev_t ev)
+{
+    switch (ev) {
+    case IEEE802154_MAC_FSM_EV_SCAN_DONE:
+    {
+        ieee802154_mlme_scan_req_t *req = mac->scan_req;
+        ieee802154_radio_set_frame_filter_mode(&mac->submac.dev, IEEE802154_FILTER_ACCEPT);
+        mac->scan_active = false;
+        mac->scan_req = NULL;
+        if (req != NULL) {
+            mac->cbs.mlme_scan_confirm(mac, 0, req);
+        }
+        return mac->state_before_scan;
+    }
+    case IEEE802154_MAC_FSM_EV_TX_REQUEST:
+        return IEEE802154_MAC_STATE_SCAN_ACTIVE;
+    case IEEE802154_MAC_FSM_EV_SLEEP:
+        return IEEE802154_MAC_STATE_INVALID;
+    default:
+        return IEEE802154_MAC_STATE_INVALID;
+    }
+}
+
+static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
+                                                         ieee802154_mac_fsm_ev_t ev)
+{
+    switch (ev) {
+    case IEEE802154_MAC_FSM_EV_SCAN_START:
+        if (mac->scan_req == NULL) {
+            return IEEE802154_MAC_STATE_INVALID;
+        }
+        mac->state_before_scan = mac->state;
+        return IEEE802154_MAC_STATE_SCAN_ACTIVE;
+    case IEEE802154_MAC_FSM_EV_DISASSOC_RX:
+    case IEEE802154_MAC_FSM_EV_TX_REQUEST:
+        return IEEE802154_MAC_STATE_COORDINATOR;
+    case IEEE802154_MAC_FSM_EV_SLEEP:
+        return IEEE802154_MAC_STATE_SLEEP;
+    default:
+        return IEEE802154_MAC_STATE_INVALID;
+    }
+}
+
+static ieee802154_mac_state_t _mac_fsm_state_device(ieee802154_mac_t *mac,
+                                                    ieee802154_mac_fsm_ev_t ev)
+{
+    (void)mac;
+    switch (ev) {
+    case IEEE802154_MAC_FSM_EV_DISASSOC_RX:
+        return IEEE802154_MAC_STATE_IDLE;
+    case IEEE802154_MAC_FSM_EV_TX_REQUEST:
+        return IEEE802154_MAC_STATE_DEVICE;
+    case IEEE802154_MAC_FSM_EV_SLEEP:
+        return IEEE802154_MAC_STATE_SLEEP;
+    default:
+        return IEEE802154_MAC_STATE_INVALID;
+    }
+}
+
+static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
+                                                         ieee802154_mac_fsm_ev_t ev)
+{
+    (void)mac;
+    switch (ev) {
+    case IEEE802154_MAC_FSM_EV_ASSOC_RES_RX:
+        return IEEE802154_MAC_STATE_DEVICE;
+    case IEEE802154_MAC_FSM_EV_DISASSOC_RX:
+        return IEEE802154_MAC_STATE_IDLE;
+    default:
+        return IEEE802154_MAC_STATE_INVALID;
+    }
+}
+
+static ieee802154_mac_state_t _mac_fsm_state_sleep(ieee802154_mac_t *mac,
+                                                   ieee802154_mac_fsm_ev_t ev)
+{
+    (void)mac;
+    switch (ev) {
+    case IEEE802154_MAC_FSM_EV_WAKE:
+        return IEEE802154_MAC_STATE_IDLE;
+    default:
+        return IEEE802154_MAC_STATE_INVALID;
+    }
+}
+
+static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev)
+{
+    ieee802154_mac_state_t new_state;
+
+    switch (mac->state) {
+    case IEEE802154_MAC_STATE_IDLE:
+        new_state = _mac_fsm_state_idle(mac, ev);
+        break;
+    case IEEE802154_MAC_STATE_SCAN_ACTIVE:
+        new_state = _mac_fsm_state_scan_active(mac, ev);
+        break;
+    case IEEE802154_MAC_STATE_ASSOCIATING:
+        new_state = _mac_fsm_state_associating(mac, ev);
+        break;
+    case IEEE802154_MAC_STATE_COORDINATOR:
+        new_state = _mac_fsm_state_coordinator(mac, ev);
+        break;
+    case IEEE802154_MAC_STATE_DEVICE:
+        new_state = _mac_fsm_state_device(mac, ev);
+        break;
+    case IEEE802154_MAC_STATE_SLEEP:
+        new_state = _mac_fsm_state_sleep(mac, ev);
+        break;
+    default:
+        new_state = IEEE802154_MAC_STATE_INVALID;
+        break;
+    }
+
+    if (new_state == IEEE802154_MAC_STATE_INVALID) {
+        const char *ev_str = (ev < (sizeof(_mac_fsm_ev_str) / sizeof(_mac_fsm_ev_str[0])))
+                             ? _mac_fsm_ev_str[ev]
+                             : "UNKNOWN";
+        const char *st_str = (mac->state < (sizeof(_mac_fsm_state_str) /
+                             sizeof(_mac_fsm_state_str[0])))
+                             ? _mac_fsm_state_str[mac->state]
+                             : "UNKNOWN";
+        if (ev_str == NULL) {
+            ev_str = "UNKNOWN";
+        }
+        if (st_str == NULL) {
+            st_str = "UNKNOWN";
+        }
+        DEBUG("IEEE802154 MAC: invalid FSM event %s in state %s\n", ev_str, st_str);
+        return -EINVAL;
+    }
+
+    if (new_state != mac->state) {
+        const char *ev_str = (ev < (sizeof(_mac_fsm_ev_str) / sizeof(_mac_fsm_ev_str[0])))
+                             ? _mac_fsm_ev_str[ev]
+                             : "UNKNOWN";
+        const char *old_str = (mac->state < (sizeof(_mac_fsm_state_str) /
+                             sizeof(_mac_fsm_state_str[0])))
+                             ? _mac_fsm_state_str[mac->state]
+                             : "UNKNOWN";
+        const char *new_str = (new_state < (sizeof(_mac_fsm_state_str) /
+                             sizeof(_mac_fsm_state_str[0])))
+                             ? _mac_fsm_state_str[new_state]
+                             : "UNKNOWN";
+        if (ev_str == NULL) {
+            ev_str = "UNKNOWN";
+        }
+        if (old_str == NULL) {
+            old_str = "UNKNOWN";
+        }
+        if (new_str == NULL) {
+            new_str = "UNKNOWN";
+        }
+        DEBUG("IEEE802154 MAC: FSM %s -> %s on %s\n", old_str, new_str, ev_str);
+        mac->state = new_state;
+    }
+
+    if ((ev == IEEE802154_MAC_FSM_EV_SCAN_START) &&
+        (mac->state == IEEE802154_MAC_STATE_SCAN_ACTIVE)) {
+        ieee802154_radio_set_frame_filter_mode(&mac->submac.dev, IEEE802154_FILTER_PROMISC);
+        mac->scan_active = true;
+        _scan_timer_process_locked(mac);
+    }
+
+    return 0;
+}
+
+int ieee802154_mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev)
+{
+    int res;
+
+    if (!mac) {
+        return -EINVAL;
+    }
+
+    mutex_lock(&mac->submac_lock);
+    res = _mac_fsm_process_ev(mac, ev);
+    mutex_unlock(&mac->submac_lock);
+    return res;
 }
 
 bool ieee802154_mac_tx_full(const ieee802154_mac_txq_t *txq)
@@ -228,6 +457,8 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
     dsc->type = frame_type;
     dsc->ack = ack_req;
     dsc->indirect = indirect;
+    dsc->tx_state = IEEE802154_TX_STATE_QUEUED;
+    DEBUG("IEEE802154 MAC: TX state QUEUED (handle=%u)\n", dsc->handle);
 
     /* src addr selection */
     const void *src = NULL;
@@ -528,6 +759,11 @@ static void _hal_init_dev(ieee802154_mac_t *mac, ieee802154_dev_type_t dev_type)
 
 int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr)
 {
+    /* Caller holds submac_lock. */
+    if (_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_TX_REQUEST) < 0) {
+        return -EBUSY;
+    }
+
     int slot = ieee802154_mac_indirectq_search_slot(&mac->indirect_q, dst_addr);
 
     if (slot < 0) {
@@ -545,6 +781,8 @@ int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_ad
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);
     mac->indirect_q.current_slot = slot;
     mac->indirect_q.current_txq = txq;
+    d->tx_state = IEEE802154_TX_STATE_IN_PROGRESS;
+    DEBUG("IEEE802154 MAC: TX state IN_PROGRESS (handle=%u)\n", d->handle);
     int r = ieee802154_send(&mac->submac, &d->iol_mhr);
     if (r == 0) {
         mac->indirect_q.busy = true;
@@ -656,6 +894,16 @@ void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac)
     }
 
     mutex_lock(&mac->submac_lock);
+    _scan_timer_process_locked(mac);
+    mutex_unlock(&mac->submac_lock);
+}
+
+static void _scan_timer_process_locked(ieee802154_mac_t *mac)
+{
+    if ((mac == NULL) || (mac->scan_req == NULL)) {
+        return;
+    }
+
     uint8_t idx = *mac->scan_req->results_used;
     int res = ieee802154_set_channel_number(&mac->submac, mac->scan_req->channels[idx]);
     res |= ieee802154_mac_enqueue_beacon_request(mac);
@@ -667,15 +915,10 @@ void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac)
     (*mac->scan_req->results_used)++;
     if (*mac->scan_req->results_used >= mac->scan_req->channel_count) {
         printf("used: %u \n", *mac->scan_req->results_used);
-        ieee802154_radio_set_frame_filter_mode(&mac->submac.dev, IEEE802154_FILTER_ACCEPT);
-        ieee802154_mlme_scan_req_t *req = mac->scan_req;
-        mac->scan_active = false;
-        mac->scan_req = NULL;
-        mac->cbs.mlme_scan_confirm(mac, 0, req);
-        mutex_unlock(&mac->submac_lock);
+        _mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_SCAN_DONE);
         return;
     }
-    mutex_unlock(&mac->submac_lock);
+
     uint32_t duration_us = mac->scan_req->duration * mac->sym_us;
     ztimer_set(ZTIMER_USEC, &mac->scan_timer, duration_us);
 }
@@ -768,12 +1011,16 @@ void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
             break;
         case IEEE802154_CMD_ASSOCIATION_REQ:
             DEBUG("IEEE802154 MAC: IEEE802154_CMD_ASSOCIATION_REQ\n");
+            _mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX);
             break;
         case IEEE802154_CMD_ASSOCIATION_RES:
             DEBUG("IEEE802154 MAC: IEEE802154_CMD_ASSOCIATION_RES\n");
+            mac->is_coordinator = false;
+            _mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_ASSOC_RES_RX);
             break;
         case IEEE802154_CMD_DISASSOCIATION:
             DEBUG("IEEE802154 MAC: IEEE802154_CMD_DISASSOCIATION\n");
+            _mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_DISASSOC_RX);
             break;
         default:
             DEBUG("IEEE802154 MAC: unknown command id\n");
@@ -813,6 +1060,8 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     }
 
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(&indirect_q->q[slot]);
+    d->tx_state = IEEE802154_TX_STATE_DONE;
+    DEBUG("IEEE802154 MAC: TX state DONE (handle=%u, status=%d)\n", d->handle, status);
     if ((d->type == IEEE802154_FCF_TYPE_DATA) && mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
     }
@@ -863,6 +1112,8 @@ void ieee802154_init_mac_internal(ieee802154_mac_t *mac)
     mac->cmd.iol_base = mac->cmd_buf;
     mac->cmd.iol_len = IEEE802154_FRAME_LEN_MAX;
     mac->cmd.iol_next = NULL;
+    mac->state = IEEE802154_MAC_STATE_IDLE;
+    mac->state_before_scan = IEEE802154_MAC_STATE_IDLE;
     _hal_init_dev(mac, IEEE802154_DEV_TYPE_KW2XRF);
     ieee802154_pib_value_t short_addr_value;
     ieee802154_pib_value_t ext_addr_value;
