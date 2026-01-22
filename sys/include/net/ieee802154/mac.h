@@ -372,6 +372,27 @@ typedef struct {
     void *mac;
 } ieee802154_mac_cbs_t;
 
+/**
+ * @brief IEEE 802.15.4 MAC global state.
+ */
+typedef enum {
+    IEEE802154_MAC_STATE_IDLE,
+    IEEE802154_MAC_STATE_SCAN_ACTIVE,
+    IEEE802154_MAC_STATE_ASSOCIATING,
+    IEEE802154_MAC_STATE_COORDINATOR,
+    IEEE802154_MAC_STATE_DEVICE,
+    IEEE802154_MAC_STATE_SLEEP,
+    IEEE802154_MAC_STATE_INVALID,
+} ieee802154_mac_state_t;
+
+/**
+ * @brief IEEE 802.15.4 MAC TX descriptor state.
+ */
+typedef enum {
+    IEEE802154_TX_STATE_QUEUED,
+    IEEE802154_TX_STATE_IN_PROGRESS,
+    IEEE802154_TX_STATE_DONE,
+} ieee802154_tx_state_t;
 
 /**
  * @brief IEEE 802.15.4 MAC TX descriptor.
@@ -382,6 +403,7 @@ typedef struct {
     uint8_t type;
     bool indirect;
     bool ack;
+    ieee802154_tx_state_t tx_state;                 /**< current TX state */
     uint16_t deadline_tick;
     uint8_t mhr[IEEE802154_MAX_HDR_LEN];            /**< persistent header storage */
     iolist_t iol_mhr;                               /**< persistent mhr */
@@ -418,6 +440,8 @@ typedef struct {
  */
 typedef struct {
     bool is_coordinator;
+    ieee802154_mac_state_t state;
+    ieee802154_mac_state_t state_before_scan;
     ieee802154_pib_t pib;                                       /**< PIB of the MAC */
     mutex_t pib_lock;
     ieee802154_submac_t submac;                                 /**< SubMAC descriptor */

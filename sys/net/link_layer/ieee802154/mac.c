@@ -71,20 +71,26 @@ int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type
     int res = 0;
 
     mac->scan_req = req;
-    mac->scan_active = true;
     if (req->results_used) {
         *req->results_used = 0;
     }
     mac->scan_timer.callback = mac->cbs.scan_timer_request;
     mac->scan_timer.arg = mac;
 
+    if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_SCAN_START) < 0) {
+        mac->scan_req = NULL;
+        mac->scan_active = false;
+        return -EBUSY;
+    }
+
     switch (type)
     {
     case IEEE802154_SCAN_ACTIVE:
-        mutex_lock(&mac->submac_lock);
-        ieee802154_radio_set_frame_filter_mode(&mac->submac.dev, IEEE802154_FILTER_PROMISC);
-        mutex_unlock(&mac->submac_lock);
-        ieee802154_mac_scan_timer_process(mac);
+        if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_SCAN_START) < 0) {
+            mac->scan_req = NULL;
+            mac->scan_active = false;
+            return -EBUSY;
+        }
         break;
     default:
         DEBUG("IEEE802154 MAC: Scan type not implemented\n");
@@ -115,6 +121,7 @@ int ieee802154_mlme_start_request(ieee802154_mac_t *mac,
         }
     }
     mac->is_coordinator = true;
+    ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_COORD_START);
     return 0;
 }
 
