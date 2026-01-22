@@ -158,6 +158,16 @@ int ieee802154_mac_enqueue_data_request(ieee802154_mac_t *mac,
                                         uint16_t *dst_panid,
                                         const void *dst_addr);
 
+/**
+ * @brief Enequeu a beacon request command.
+ */
+int ieee802154_mac_enqueue_beacon_request(ieee802154_mac_t *mac);
+
+/**
+ * @brief Process the active scan timer in thread context.
+ */
+void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac);
+
 #ifdef __cplusplus
 }
 #endif

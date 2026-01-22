@@ -220,12 +220,12 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
                             bool ack_req,
                             bool indirect)
 {
-    DEBUG("Enqeue data in tx\n");
     ieee802154_mac_tx_desc_t *dsc = ieee802154_mac_tx_reserve(txq);
     if (!dsc) {
         return -ENOBUFS;
     }
     dsc->handle = *msdu_handle;
+    dsc->type = frame_type;
     dsc->ack = ack_req;
     dsc->indirect = indirect;
 
@@ -252,7 +252,7 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
     ieee802154_mac_mlme_get(mac, IEEE802154_PIB_DSN, &dsn);
 
     uint8_t flags = frame_type;
-    if (ack_req) {
+    if ((frame_type != IEEE802154_FCF_TYPE_BEACON) && ack_req) {
         flags |= IEEE802154_FCF_ACK_REQ;
     }
 
@@ -335,9 +335,6 @@ int ieee802154_mac_map_push(ieee802154_mac_t *mac,
                             bool indirect)
 {
     // TODO: mapping short to extended
-    if ((dst_mode != IEEE802154_ADDR_MODE_EXTENDED) || (dst_addr == NULL)) {
-        return -EINVAL;
-    }
     int slot = ieee802154_mac_indirectq_get_slot(&mac->indirect_q, dst_addr);
     if (slot < 0) {
         return -ENOBUFS;
@@ -346,7 +343,7 @@ int ieee802154_mac_map_push(ieee802154_mac_t *mac,
                                dst_mode, dst_panid, dst_addr, msdu,
                                msdu_handle, ack_req, indirect);
     if (res < 0) {
-        DEBUG("Enqueue Data failed\n");
+        DEBUG("Enqueue Data failed: %d (%s)\n", res, strerror(-res));
         return res;
     }
     DEBUG("Frame enqueued \n");
@@ -367,6 +364,35 @@ int ieee802154_mac_enqueue_data_request(ieee802154_mac_t *mac,
                             dst_panid, dst_addr, &mac->cmd, &handle, true, false);
     return 0;
 }
+
+int ieee802154_mac_enqueue_beacon_request(ieee802154_mac_t *mac)
+{
+    *(uint8_t *)mac->cmd.iol_base = IEEE802154_CMD_BEACON_REQ;
+    mac->cmd.iol_len = 1;
+    mac->cmd.iol_next = NULL;
+    uint8_t handle = 0xFFU;
+    uint8_t panid_bytes[2] = IEEE802154_PANID_BCAST;
+    uint16_t panid = ((uint16_t)panid_bytes[1] << 8) | (uint16_t)panid_bytes[0];
+    ieee802154_ext_addr_t dst_addr = {.uint8 = IEEE802154_ADDR_BCAST};
+    ieee802154_mac_map_push(mac, IEEE802154_FCF_TYPE_MACCMD, IEEE802154_ADDR_MODE_NONE, IEEE802154_ADDR_MODE_SHORT, &panid, &dst_addr, &mac->cmd, &handle, true, false);
+    return 0;
+}
+
+int ieee802154_mac_enqueue_beacon(ieee802154_mac_t *mac)
+{
+    ieee802154_pib_value_t value;
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_BEACON_PAYLOAD, &value);
+    mac->cmd.iol_base = (void *)value.v.bytes.ptr;
+    mac->cmd.iol_len = value.v.bytes.len;
+    mac->cmd.iol_next = NULL;
+    uint8_t handle = 0xFFU;
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &value);
+
+    ieee802154_mac_map_push(mac, IEEE802154_FCF_TYPE_BEACON, IEEE802154_LONG_ADDRESS_LEN, IEEE802154_ADDR_MODE_NONE,
+        0, NULL, &mac->cmd, &handle, false, false);
+    return 0;
+}
+
 
 
 #ifdef MODULE_KW2XRF
@@ -504,7 +530,6 @@ int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_ad
 {
     int slot = ieee802154_mac_indirectq_search_slot(&mac->indirect_q, dst_addr);
 
-    printf("slot sending: %d \n", slot);
     if (slot < 0) {
         if (mac->is_coordinator) {
             mac->cbs.rx_request(mac);
@@ -606,7 +631,6 @@ void ieee802154_submac_bh_request(ieee802154_submac_t *submac)
 {
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
 
-    puts("bh request\n");
     mac->cbs.bh_request(mac);
 }
 
@@ -614,7 +638,6 @@ void ieee802154_submac_ack_timer_set(ieee802154_submac_t *submac)
 {
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
 
-    puts("ACK TIMEOUT SET\n");
     ztimer_set(ZTIMER_USEC, &mac->ack_timer, (uint32_t)submac->ack_timeout_us);
 }
 
@@ -626,6 +649,37 @@ void ieee802154_submac_ack_timer_cancel(ieee802154_submac_t *submac)
     ztimer_remove(ZTIMER_USEC, &mac->ack_timer);
 }
 
+void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac)
+{
+    if (!mac) {
+        return;
+    }
+
+    mutex_lock(&mac->submac_lock);
+    uint8_t idx = *mac->scan_req->results_used;
+    int res = ieee802154_set_channel_number(&mac->submac, mac->scan_req->channels[idx]);
+    res |= ieee802154_mac_enqueue_beacon_request(mac);
+    if (res < 0) {
+        DEBUG("IEEE802154 MAC: failed to scan channel %u\n", *mac->scan_req->results_used);
+    }
+    int8_t dst_addr[IEEE802154_ADDR_BCAST_LEN] = IEEE802154_ADDR_BCAST;
+    ieee802154_mac_tx(mac, (ieee802154_ext_addr_t *)dst_addr);
+    (*mac->scan_req->results_used)++;
+    if (*mac->scan_req->results_used >= mac->scan_req->channel_count) {
+        printf("used: %u \n", *mac->scan_req->results_used);
+        ieee802154_radio_set_frame_filter_mode(&mac->submac.dev, IEEE802154_FILTER_ACCEPT);
+        ieee802154_mlme_scan_req_t *req = mac->scan_req;
+        mac->scan_active = false;
+        mac->scan_req = NULL;
+        mac->cbs.mlme_scan_confirm(mac, 0, req);
+        mutex_unlock(&mac->submac_lock);
+        return;
+    }
+    mutex_unlock(&mac->submac_lock);
+    uint32_t duration_us = mac->scan_req->duration * mac->sym_us;
+    ztimer_set(ZTIMER_USEC, &mac->scan_timer, duration_us);
+}
+
 /* ===== SubMAC callbacks ===== */
 static void _submac_rx_done(ieee802154_submac_t *submac)
 {
@@ -634,9 +688,8 @@ static void _submac_rx_done(ieee802154_submac_t *submac)
     mac->cbs.allocate_request(mac);
 }
 
-void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
+void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
 {
-    puts("here\n");
     eui64_t src_addr;
     uint8_t src[IEEE802154_LONG_ADDRESS_LEN];//, dst[IEEE802154_LONG_ADDRESS_LEN];
     uint8_t cmd_type, frame_type;
@@ -661,8 +714,36 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
         return;
     }
     memcpy(&src_addr, src, src_len);
-    printf("frame type: %d\n", frame_type);
+    // TODO: reactivate till scan is not active anymore
     switch (frame_type) {
+    case IEEE802154_FCF_TYPE_BEACON:
+        if (mac->scan_active && (mac->scan_req != NULL) &&
+            (mac->scan_req->results != NULL) &&
+            (mac->scan_req->results_used != NULL) &&
+            (mac->scan_req->results_len > 0)) {
+            size_t idx = *mac->scan_req->results_used;
+            if (idx < mac->scan_req->results_len) {
+                ieee802154_scan_result_t *res = &mac->scan_req->results[idx];
+                res->channel = mac->submac.channel_num;
+                res->pan_id = src_pan.u16;
+                res->lqi = info.lqi;
+                res->rssi = info.rssi;
+                if (src_len == IEEE802154_SHORT_ADDRESS_LEN) {
+                    res->coord_addr.type = IEEE802154_ADDR_MODE_SHORT;
+                    memcpy(&res->coord_addr.v.short_addr, src,
+                           IEEE802154_SHORT_ADDRESS_LEN);
+                }
+                else if (src_len == IEEE802154_LONG_ADDRESS_LEN) {
+                    res->coord_addr.type = IEEE802154_ADDR_MODE_EXTENDED;
+                    memcpy(&res->coord_addr.v.ext_addr, src,
+                           IEEE802154_LONG_ADDRESS_LEN);
+                }
+                else {
+                    res->coord_addr.type = IEEE802154_ADDR_MODE_NONE;
+                }
+            }
+        }
+        break;
     case IEEE802154_FCF_TYPE_DATA:
         if (mac->cbs.data_indication) {
             mac->cbs.data_indication(mac->cbs.mac, buf, &info);
@@ -670,16 +751,43 @@ void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf)
         break;
     case IEEE802154_FCF_TYPE_MACCMD:
         cmd_type = ((const uint8_t *)buf->iol_base)[mhr_len];
-        if (cmd_type == IEEE802154_CMD_DATA_REQ) {
-            puts("data request \n");
+        switch(cmd_type)
+        {
+        case IEEE802154_CMD_DATA_REQ:
+            DEBUG("IEEE802154 MAC: IEEE802154_CMD_DATA_REQ\n");
             if (ieee802154_mac_tx(mac, &src_addr) > 0) {
                 mac->cbs.dealloc_request(mac, buf);
             }
+            break;
+        // TODO:
+        case IEEE802154_CMD_BEACON_REQ:
+            DEBUG("IEEE802154 MAC: IEEE802154_CMD_BEACON_REQ\n");
+            // TODO: how to determine address mode? for me short never worked
+            ieee802154_mac_enqueue_beacon(mac);
+            ieee802154_mac_tx(mac, &src_addr);
+            break;
+        case IEEE802154_CMD_ASSOCIATION_REQ:
+            DEBUG("IEEE802154 MAC: IEEE802154_CMD_ASSOCIATION_REQ\n");
+            break;
+        case IEEE802154_CMD_ASSOCIATION_RES:
+            DEBUG("IEEE802154 MAC: IEEE802154_CMD_ASSOCIATION_RES\n");
+            break;
+        case IEEE802154_CMD_DISASSOCIATION:
+            DEBUG("IEEE802154 MAC: IEEE802154_CMD_DISASSOCIATION\n");
+            break;
+        default:
+            DEBUG("IEEE802154 MAC: unknown command id\n");
+            break;
         }
         break;
     default:
+        DEBUG("IEEE802154 MAC: unknown FCF_TYPE: %d\n", frame_type);
         mutex_unlock(&mac->submac_lock);
         return;
+    }
+    if (mac->scan_active)
+    {
+        mac->cbs.rx_request(mac);
     }
     mutex_unlock(&mac->submac_lock);
 }
@@ -705,11 +813,11 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     }
 
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(&indirect_q->q[slot]);
-    if ((d->handle != 0xFF) && mac->cbs.data_confirm) {
+    if ((d->type == IEEE802154_FCF_TYPE_DATA) && mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
     }
-    printf("frame pending: %u\n", status);
-    if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) ) {
+    /* TODO: implement timer for not receiving frame after frame pending to go back to radio off */
+    if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) || mac->scan_active) {
         mac->cbs.rx_request(mac);
     }
     d->in_use = false;
