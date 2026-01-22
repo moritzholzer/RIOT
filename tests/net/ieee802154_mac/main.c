@@ -1,5 +1,7 @@
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "event.h"
 #include "event/thread.h"
@@ -12,20 +14,24 @@
 #include "shell.h"
 
 #define IEEE802154_MAC_TEST_BUF_SIZE (16U)
+#define IEEE802154_LONG_ADDRESS_LEN_STR_MAX \
+        (sizeof("00:00:00:00:00:00:00:00"))
 
 //static void _ev_data_confirm_handler(event_t *event);                        /**< TX Done event handler */                        /**< RX Done event handler */
 static void _ev_radio_handler(event_t *event);                      /**< CRC Error event handler */
 static void _ev_bh_request_handler(event_t *event);                 /**< BH Request event handler */
 static void _ev_ack_timeout_handler(event_t *event);                /**< ACK Timeout event handler */
 static void _ev_tick_handler(event_t *event);
-static void _ev_send_handler(event_t *event);                       /**< Set RX event handler */
+static void _ev_scan_timer_handler(event_t *event);
+static void _ev_alloc_handler(event_t *event);                       /**< Set RX event handler */
 static void _ev_rx_handler(event_t *event);
 
 //static event_t ev_data_confirm = { .handler = _ev_data_confirm_handler };         /**< TX Done descriptor */         /**< RX Done descriptor */
 static event_t ev_bh_request = { .handler = _ev_bh_request_handler };   /**< BH Request descriptor */
 static event_t ev_ack_timeout = { .handler = _ev_ack_timeout_handler }; /**< ACK TO descriptor */
 static event_t ev_tick = { .handler = _ev_tick_handler };
-static event_t ev_send = { .handler = _ev_send_handler };               /**< Set RX descriptor */
+static event_t ev_scan_timer = { .handler = _ev_scan_timer_handler };
+static event_t ev_alloc = { .handler = _ev_alloc_handler };               /**< Set RX descriptor */
 static event_t ev_radio = { .handler = _ev_radio_handler };
 static event_t ev_rx = { .handler = _ev_rx_handler };
 
@@ -38,6 +44,10 @@ typedef struct {
 ieee802154_mac_t mac;
 mutex_t buf_lock;
 mac_buf_t buf_pool[IEEE802154_MAC_TEST_BUF_SIZE];
+static uint16_t scan_channels[16];
+static ieee802154_scan_result_t scan_results[16];
+static size_t scan_results_used;
+static ieee802154_mlme_scan_req_t scan_req;
 
 static const uint8_t payload[] =
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam ornare" \
@@ -47,11 +57,13 @@ static const uint8_t payload[] =
 static int start(int argc, char **argv);
 static int poll(int argc, char **argv);
 static int print_addr(int argc, char **argv);
+static int scan(int argc, char **argv);
 static int txtsnd(int argc, char **argv);
 static const shell_command_t shell_commands[] = {
     { "print_addr", "Print IEEE802.15.4 addresses", print_addr },
     { "txtsnd", "Send IEEE 802.15.4 packet", txtsnd },
     { "poll", "Send IEEE 802.15.4 data request packet", poll },
+    { "scan", "Active scan: scan <duration_symbols> <ch1> [ch2 ...]", scan },
     { "start", "Start as IEEE 802.15.4 coordinator (always RX)", start },
     { NULL, NULL, NULL }
 };
@@ -137,16 +149,45 @@ static void my_ind(void *arg,
     _mac_buf_free(&mac, buf);
 }
 
+static void my_scan_confirm(void *arg, int status,
+                            ieee802154_mlme_scan_req_t *req)
+{
+    (void)arg;
+    printf("SCAN confirm res=%d (%s), results=%u\n",
+           status, strerror(-status), *req->results_used);
+    for (size_t i = 0; i < *req->results_used; i++) {
+        char addr_str[IEEE802154_LONG_ADDRESS_LEN_STR_MAX];
+        const ieee802154_scan_result_t *res = &req->results[i];
+        if (res->coord_addr.type == IEEE802154_ADDR_MODE_EXTENDED) {
+            printf("[%u] ch=%u pan=0x%04x addr=%s lqi=%u rssi=%u\n",
+                   (unsigned)i, res->channel, res->pan_id,
+                   l2util_addr_to_str(res->coord_addr.v.ext_addr.uint8,
+                                      IEEE802154_LONG_ADDRESS_LEN, addr_str),
+                   res->lqi, res->rssi);
+        }
+        else if (res->coord_addr.type == IEEE802154_ADDR_MODE_SHORT) {
+            printf("[%u] ch=%u pan=0x%04x addr=0x%04x lqi=%u rssi=%u\n",
+                   (unsigned)i, res->channel, res->pan_id,
+                   res->coord_addr.v.short_addr.u16, res->lqi, res->rssi);
+        }
+        else {
+            printf("[%u] ch=%u pan=0x%04x addr=none lqi=%u rssi=%u\n",
+                   (unsigned)i, res->channel, res->pan_id,
+                   res->lqi, res->rssi);
+        }
+    }
+}
+
 static void _ev_tick_handler(event_t *event)
 {
     (void)event;
     ieee802154_mac_tick(&mac);
 }
 
-static void my_send(void *mac)
+static void my_alloc(void *mac)
 {
     (void)mac;
-    event_post(EVENT_PRIO_HIGHEST, &ev_send);
+    event_post(EVENT_PRIO_HIGHEST, &ev_alloc);
 }
 
 static void my_dealloc(void *mac, iolist_t *io)
@@ -160,6 +201,12 @@ static void my_tick(void *mac)
 {
     (void)mac;
     event_post(EVENT_PRIO_HIGHEST, &ev_tick);
+}
+
+static void my_scan_timer(void *mac)
+{
+    (void)mac;
+    event_post(EVENT_PRIO_HIGHEST, &ev_scan_timer);
 }
 
 static void my_timeout(void *mac)
@@ -187,6 +234,11 @@ static void _ev_radio_handler(event_t *event)
     (void)event;
     ieee802154_mac_handle_radio(_dev_radio_cb, _st_radio_cb);
 }
+static void _ev_scan_timer_handler(event_t *event)
+{
+    (void)event;
+    ieee802154_mac_scan_timer_process(&mac);
+}
 static void _ev_bh_request_handler(event_t *event)
 {
     (void)event;
@@ -197,7 +249,7 @@ static void _ev_ack_timeout_handler(event_t *event)
     (void)event;
     ieee802154_mac_ack_timeout_fired(&mac);
 }
-static void _ev_send_handler(event_t *event)
+static void _ev_alloc_handler(event_t *event)
 {
     (void)event;
     iolist_t *buf = _allocate();
@@ -205,7 +257,7 @@ static void _ev_send_handler(event_t *event)
         puts("no RX buffer available\n");
         return;
     }
-    ieee802154_mac_send_process(&mac, buf);
+    ieee802154_mac_rx_process(&mac, buf);
 }
 
 static void _ev_rx_handler(event_t *event)
@@ -249,9 +301,6 @@ static int poll(int argc, char **argv)
     return 0;
 }
 
-#define IEEE802154_LONG_ADDRESS_LEN_STR_MAX \
-        (sizeof("00:00:00:00:00:00:00:00"))
-
 static int print_addr(int argc, char **argv)
 {
     (void)argc;
@@ -261,6 +310,41 @@ static int print_addr(int argc, char **argv)
     ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_EXTENDED_ADDRESS, &long_addr);
     printf("%s\n", l2util_addr_to_str(
                long_addr.v.ext_addr.uint8, IEEE802154_LONG_ADDRESS_LEN, addr_str));
+    return 0;
+}
+
+static int scan(int argc, char **argv)
+{
+    if (argc < 3) {
+        puts("Usage: scan <duration_us> <ch1> [ch2 ...]\n");
+        return 1;
+    }
+
+    uint32_t duration = (uint32_t)atoi(argv[1]);
+    int channel_count = argc - 2;
+    if (channel_count > (int)(sizeof(scan_channels) / sizeof(scan_channels[0]))) {
+        puts("Error: too many channels\n");
+        return 1;
+    }
+
+    for (int i = 0; i < channel_count; i++) {
+        scan_channels[i] = (uint16_t)atoi(argv[i + 2]);
+    }
+
+    scan_results_used = 0;
+    scan_req.channels = scan_channels;
+    scan_req.channel_count = (uint8_t)channel_count;
+    scan_req.results = scan_results;
+    scan_req.results_len = sizeof(scan_results) / sizeof(scan_results[0]);
+    scan_req.results_used = &scan_results_used;
+    scan_req.duration = duration;
+
+    int res = ieee802154_mac_mlme_scan_request(&mac, IEEE802154_SCAN_ACTIVE,
+                                               &scan_req);
+    if (res < 0) {
+        printf("scan request failed: %d (%s)\n", res, strerror(-res));
+        return 1;
+    }
     return 0;
 }
 
@@ -333,11 +417,13 @@ static int _init(void)
     ieee802154_mac_cbs_t cbs = {
         .data_confirm = my_confirm,
         .data_indication = my_ind,
+        .mlme_scan_confirm = my_scan_confirm,
+        .scan_timer_request = my_scan_timer,
         .tick_request = my_tick,
         .bh_request = my_bh_cb,
         .radio_cb_request = my_radio_cb,
         .ack_timeout = my_timeout,
-        .allocate_request = my_send,
+        .allocate_request = my_alloc,
         .dealloc_request = my_dealloc,
         .rx_request = my_rx
     };

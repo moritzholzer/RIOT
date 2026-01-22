@@ -260,6 +260,35 @@ typedef void (*ieee802154_mcps_data_confirm_cb_t)(void *mac, uint8_t handle, int
 typedef void (*ieee802154_mcps_data_indication_cb_t)(void *mac, iolist_t *msdu,
                                                      const ieee802154_rx_info_t *info);
 
+/**
+ * @brief IEEE 802.15.4 scan result entry.
+ */
+typedef struct {
+    uint16_t channel;
+    uint16_t pan_id;
+    ieee802154_addr_t coord_addr;
+    uint8_t lqi;
+    uint8_t rssi;
+} ieee802154_scan_result_t;
+
+/**
+ * @brief IEEE 802.15.4 scan request parameters.
+ */
+typedef struct {
+    const uint16_t *channels;
+    uint8_t channel_count;
+    uint32_t duration;
+    ieee802154_scan_result_t *results;
+    size_t results_len;
+    size_t *results_used;
+} ieee802154_mlme_scan_req_t;
+
+/**
+ * @brief IEEE 802.15.4 MAC MLME-SCAN.confirm callback.
+ */
+typedef void (*ieee802154_mlme_scan_confirm_cb_t)(void *mac, int status,
+                                                  ieee802154_mlme_scan_req_t *request);
+
 /* === MLME confirm callback types === */
 
 /**
@@ -308,6 +337,10 @@ typedef void (*ieee802154_radio_cb_request_t)(ieee802154_dev_t *dev, ieee802154_
  */
 typedef void (*ieee802154_mac_tick_t)(void *mac);
 /**
+ * @brief IEEE 802.15.4 MAC scan timer request callback.
+ */
+typedef void (*ieee802154_mac_scan_timer_request_t)(void *mac);
+/**
  * @brief IEEE 802.15.4 MAC allocate request callback.
  */
 typedef void (*ieee802154_mac_allocate_request_t)(void *mac);
@@ -326,12 +359,14 @@ typedef void (*ieee802154_mac_dealloc_request_t)(void *mac, iolist_t *iolist);
 typedef struct {
     ieee802154_mcps_data_confirm_cb_t data_confirm;             /**< MCPS-DATA.confirm callback*/
     ieee802154_mcps_data_indication_cb_t data_indication;       /**< MCPS-DATA.indication callback*/
+    ieee802154_mlme_scan_confirm_cb_t mlme_scan_confirm;        /**< MLME-SCAN.confirm callback */
     ieee802154_mlme_start_confirm_cb_t mlme_start_confirm;      /**< MLME-START.confirm callback */
     ieee802154_mac_ack_timeout_fired_cb_t ack_timeout;          /**< ieee802154_mac_ack_timeout_fired() should be dispatched */
     ieee802154_mac_bh_request_cb_t bh_request;                  /**< ieee802154_mac_bh_process() should be dispatched */
     ieee802154_radio_cb_request_t radio_cb_request;             /**< ieee802154_mac_handle_radio() should be dispatched */
+    ieee802154_mac_scan_timer_request_t scan_timer_request;     /**< ieee802154_mac_scan_timer_process() should be dispatched */
     ieee802154_mac_tick_t tick_request;                         /**< ieee802154_mac_tick() should be dispatched */
-    ieee802154_mac_allocate_request_t allocate_request;         /**< allocate TX queue entry */
+    ieee802154_mac_allocate_request_t allocate_request;         /**< allocate TX queue entry ieee802154_mac_tx_process() should be dispatched */
     ieee802154_mac_dealloc_request_t dealloc_request;           /**< release TX queue entry */
     ieee802154_mac_rx_request_t rx_request;                     /**< RX request from MAC */
     void *mac;
@@ -344,6 +379,7 @@ typedef struct {
 typedef struct {
     bool in_use;                                    /**< wheather ring buffer element is in use */
     uint8_t handle;                                 /**< the MSDU handle */
+    uint8_t type;
     bool indirect;
     bool ack;
     uint16_t deadline_tick;
@@ -393,7 +429,14 @@ typedef struct {
     iolist_t cmd;
     ieee802154_mac_indirect_q_t indirect_q;
     uint16_t sym_us;
+    ieee802154_mlme_scan_req_t *scan_req;
+    bool scan_active;
+    ztimer_t scan_timer;
 } ieee802154_mac_t;
+
+typedef enum {
+    IEEE802154_SCAN_ACTIVE,
+} ieee802154_scan_type_t;
 
 /* === Function that has to be dispatched and called on callbacks */
 
@@ -415,12 +458,17 @@ void ieee802154_mac_handle_radio(ieee802154_dev_t *dev, ieee802154_trx_ev_t st);
 /**
  * @brief Process pending TX queue entries.
  */
-void ieee802154_mac_send_process(ieee802154_mac_t *mac, iolist_t *buf);
+void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf);
 
 /**
  * @brief Handle periodic MAC tick.
  */
 void ieee802154_mac_tick(ieee802154_mac_t *mac);
+
+/**
+ * @brief Process the active scan timer in thread context.
+ */
+void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac);
 
 /**
  * @brief Init the IEEE 802.15.4 MAC
@@ -431,7 +479,8 @@ void ieee802154_mac_init(ieee802154_mac_t *mac,
 /**
  * @brief Issue a MAC scan request.
  */
-int ieee802154_mac_mlme_scan_request(void);
+int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type_t type,
+                                     ieee802154_mlme_scan_req_t *req);
 /**
  * @brief Issue a MAC MLME-SET request.
  */
