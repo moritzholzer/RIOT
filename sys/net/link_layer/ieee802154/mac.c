@@ -18,6 +18,7 @@
 
 #include "isrpipe.h"
 #include "net/ieee802154/mac.h"
+#include "net/ieee802154/mac_internal.h"
 #include "net/ieee802154/mac_pib.h"
 #include "net/ieee802154/mac_internal.h"
 
@@ -62,6 +63,7 @@ void ieee802154_mac_init(ieee802154_mac_t *mac,
 int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type_t type,
                                      ieee802154_mlme_scan_req_t *req)
 {
+    (void) type;
     if (mac->scan_active) {
         return -EBUSY;
     }
@@ -74,30 +76,12 @@ int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type
     if (req->results_used) {
         *req->results_used = 0;
     }
-    mac->scan_timer.callback = mac->cbs.scan_timer_request;
-    mac->scan_timer.arg = mac;
+    
 
     if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_SCAN_START) < 0) {
         mac->scan_req = NULL;
         mac->scan_active = false;
         return -EBUSY;
-    }
-
-    switch (type)
-    {
-    case IEEE802154_SCAN_ACTIVE:
-        if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_SCAN_START) < 0) {
-            mac->scan_req = NULL;
-            mac->scan_active = false;
-            return -EBUSY;
-        }
-        break;
-    default:
-        DEBUG("IEEE802154 MAC: Scan type not implemented\n");
-        res = -ENOTSUP;
-        mac->scan_active = false;
-        mac->scan_req = NULL;
-        break;
     }
 
     return res;
@@ -107,21 +91,11 @@ int ieee802154_mlme_start_request(ieee802154_mac_t *mac,
                                   uint16_t channel)
 {
     (void)channel;
-    (void)mac;
-    // TODO: implement in radio hal
-    bool coord = true;
-    int res = ieee802154_radio_config_addr_filter(&mac->submac.dev,IEEE802154_AF_PAN_COORD, (void*) &coord);
-    if (res == -ENOTSUP)
+    
+    if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_COORD_START) < 0)
     {
-        // TODO: filter in rx for the coordinator
-        res = ieee802154_radio_set_frame_filter_mode(&mac->submac.dev, IEEE802154_FILTER_PROMISC);
-        if (res < 0)
-        {
-            return res;
-        }
+        DEBUG("IEEE802154 MAC: failed to start as coordinator\n");
     }
-    mac->is_coordinator = true;
-    ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_COORD_START);
     return 0;
 }
 
@@ -135,19 +109,9 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  bool ack_req,
                                  bool indirect)
 {
-    mutex_lock(&mac->submac_lock);
-    int res = ieee802154_mac_map_push(mac, IEEE802154_FCF_TYPE_DATA, src_mode, dst_mode, &dst_panid,
-                                      dst_addr, msdu, &msdu_handle, ack_req, indirect);
-
-    if (res < 0) {
-        mutex_unlock(&mac->submac_lock);
-        return res;
-    }
-    if (!indirect) {
-        ieee802154_mac_tx(mac, dst_addr);
-    }
-    mutex_unlock(&mac->submac_lock);
-    return 0;
+    return ieee802154_mac_data_request_fsm(mac, src_mode, dst_mode, dst_panid,
+                                           dst_addr, msdu, msdu_handle,
+                                           ack_req, indirect);
 }
 
 int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord_mode,
@@ -155,9 +119,15 @@ int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord
 {
     mutex_lock(&mac->submac_lock);
     int res = ieee802154_mac_enqueue_data_request(mac, coord_mode, &coord_panid, coord_addr);
+    
 
-    ieee802154_mac_tx(mac, coord_addr);
+    if (res < 0) {
+        return res;
+    }
+
+    res = ieee802154_mac_tx(mac, coord_addr);
     mutex_unlock(&mac->submac_lock);
+
     return res;
 }
 
