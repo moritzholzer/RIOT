@@ -158,7 +158,6 @@ void kw2xrf_radio_hal_irq_handler(void *arg)
 
     uint8_t dregs[MKW2XDM_PHY_CTRL2 +1];
     _kw2xrf_read_dregs_from_sts1(kw_dev, dregs, ARRAY_SIZE(dregs));
-    LOG_DEBUG("0x%02X\n", dregs[MKW2XDM_IRQSTS1]);
 
     uint8_t sts1_clr = 0;
     bool indicate_hal_event = false;
@@ -182,8 +181,8 @@ void kw2xrf_radio_hal_irq_handler(void *arg)
                     hal_event = IEEE802154_RADIO_INDICATION_CRC_ERROR;
                     indicate_hal_event = true;
                 }
-
-                if (dregs[MKW2XDM_IRQSTS1] & MKW2XDM_IRQSTS1_RXIRQ) {
+                else if (dregs[MKW2XDM_IRQSTS1] & MKW2XDM_IRQSTS1_RXIRQ) {
+                    /* Only forward RX_DONE when CRC is valid to avoid short/garbled frames. */
                     sts1_clr |= MKW2XDM_IRQSTS1_RXIRQ;
                     hal_event = IEEE802154_RADIO_INDICATION_RX_DONE;
                     indicate_hal_event = true;
