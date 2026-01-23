@@ -263,12 +263,9 @@ static void _ev_alloc_handler(event_t *event)
 static void _ev_rx_handler(event_t *event)
 {
     (void)event;
-    // mutex_lock(&mac.submac_lock);
     if (ieee802154_set_rx(&mac.submac) < 0) {
         printf("error switching back to rx\n");
     }
-    printf("state: %d \n", ieee802154_submac_state_is_rx(&mac.submac));
-    // mutex_unlock(&mac.submac_lock);
 }
 
 static int start(int argc, char **argv)

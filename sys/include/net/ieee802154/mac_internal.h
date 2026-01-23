@@ -43,6 +43,7 @@ typedef enum {
  */
 typedef enum {
     IEEE802154_MAC_FSM_EV_SCAN_START,
+    IEEE802154_MAC_FSM_EV_SCAN_TIMER,
     IEEE802154_MAC_FSM_EV_SCAN_DONE,
     IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX,
     IEEE802154_MAC_FSM_EV_ASSOC_RES_RX,
@@ -51,6 +52,14 @@ typedef enum {
     IEEE802154_MAC_FSM_EV_TX_REQUEST,
     IEEE802154_MAC_FSM_EV_SLEEP,
     IEEE802154_MAC_FSM_EV_WAKE,
+    IEEE802154_MAC_FSM_EV_RX_BEACON,
+    IEEE802154_MAC_FSM_EV_RX_DATA,
+    IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ,
+    IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ,
+    IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_REQ,
+    IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES,
+    IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC,
+    IEEE802154_MAC_FSM_EV_MCPS_DATA_REQ,
 } ieee802154_mac_fsm_ev_t;
 
 /**
@@ -77,6 +86,19 @@ void ieee802154_mac_radio_attach(ieee802154_mac_t *mac);
  * @brief Transmit a MAC frame to the given destination.
  */
 int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr);
+
+/**
+ * @brief Enqueue and (optionally) transmit an MCPS data request through the MAC FSM.
+ */
+int ieee802154_mac_data_request_fsm(ieee802154_mac_t *mac,
+                                    ieee802154_addr_mode_t src_mode,
+                                    ieee802154_addr_mode_t dst_mode,
+                                    uint16_t dst_panid,
+                                    const void *dst_addr,
+                                    iolist_t *msdu,
+                                    uint8_t msdu_handle,
+                                    bool ack_req,
+                                    bool indirect);
 
 /**
  * @brief Whether the TX queue is full.
@@ -159,7 +181,7 @@ int ieee802154_mac_map_push(ieee802154_mac_t *mac,
                             uint8_t frame_type,
                             ieee802154_addr_mode_t src_mode,
                             ieee802154_addr_mode_t dst_mode,
-                            uint16_t *dst_panid,
+                            const uint16_t *dst_panid,
                             const void *dst_addr,
                             iolist_t *msdu,
                             const uint8_t *msdu_handle,

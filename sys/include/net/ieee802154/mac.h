@@ -416,6 +416,7 @@ typedef struct {
 typedef struct {
     ieee802154_mac_tx_desc_t q[IEEE802154_MAC_TXQ_LEN]; /**< outgoing queue */
     eui64_t dst_addr;
+    bool has_dst_addr;
     uint8_t head;                                       /**< queue head */
     uint8_t tail;                                       /**< queue tail */
     uint8_t cnt;                                        /**< queue count */
@@ -455,7 +456,11 @@ typedef struct {
     uint16_t sym_us;
     ieee802154_mlme_scan_req_t *scan_req;
     bool scan_active;
+    uint8_t scan_idx;
     ztimer_t scan_timer;
+    bool scan_timer_pending;
+    bool poll_rx_active;
+    uint16_t poll_rx_deadline;
 } ieee802154_mac_t;
 
 typedef enum {
