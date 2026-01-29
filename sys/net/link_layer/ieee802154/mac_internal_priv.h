@@ -19,7 +19,6 @@ extern "C" {
 #include "mutex.h"
 
 #include "net/ieee802154/mac.h"
-#include "net/ieee802154/mac_pib.h"
 
 #define ENABLE_DEBUG 1
 #include "debug.h"
@@ -49,6 +48,10 @@ typedef enum {
     IEEE802154_MAC_FSM_EV_ASSOC_RES_RX,
     IEEE802154_MAC_FSM_EV_DISASSOC_RX,
     IEEE802154_MAC_FSM_EV_COORD_START,
+    IEEE802154_MAC_FSM_EV_MLME_ASSOC_REQ,
+    IEEE802154_MAC_FSM_EV_MLME_POLL,
+    IEEE802154_MAC_FSM_EV_MLME_ASSOC_RES,
+    IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT,
     IEEE802154_MAC_FSM_EV_TX_REQUEST,
     IEEE802154_MAC_FSM_EV_SLEEP,
     IEEE802154_MAC_FSM_EV_WAKE,
@@ -61,6 +64,30 @@ typedef enum {
     IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC,
     IEEE802154_MAC_FSM_EV_MCPS_DATA_REQ,
 } ieee802154_mac_fsm_ev_t;
+
+typedef struct {
+    iolist_t *buf;
+    const ieee802154_rx_info_t *info;
+    eui64_t src_addr;
+    uint8_t src[IEEE802154_LONG_ADDRESS_LEN];
+    le_uint16_t src_pan;
+    int src_len;
+    uint8_t frame_type;
+    uint8_t cmd_type;
+    uint8_t assoc_status;
+    uint16_t assoc_short_addr;
+    const ieee802154_ext_addr_t *dst_addr;
+    const void *data_dst_addr;
+    iolist_t *msdu;
+    uint8_t msdu_handle;
+    ieee802154_addr_mode_t src_mode;
+    ieee802154_addr_mode_t dst_mode;
+    uint16_t dst_panid;
+    ieee802154_assoc_capability_t capability;
+    bool ack_req;
+    bool indirect;
+    int *result;
+} ieee802154_mac_fsm_ctx_t;
 
 /**
  * @brief Initialize internal MAC state.
@@ -87,18 +114,6 @@ void ieee802154_mac_radio_attach(ieee802154_mac_t *mac);
  */
 int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_addr);
 
-/**
- * @brief Enqueue and (optionally) transmit an MCPS data request through the MAC FSM.
- */
-int ieee802154_mac_data_request_fsm(ieee802154_mac_t *mac,
-                                    ieee802154_addr_mode_t src_mode,
-                                    ieee802154_addr_mode_t dst_mode,
-                                    uint16_t dst_panid,
-                                    const void *dst_addr,
-                                    iolist_t *msdu,
-                                    uint8_t msdu_handle,
-                                    bool ack_req,
-                                    bool indirect);
 
 /**
  * @brief Whether the TX queue is full.
@@ -156,7 +171,8 @@ bool ieee802154_mac_frame_is_expired(uint16_t now_tick, uint16_t deadline_tick);
  * @brief Update the frame pending bit for a destination address.
  */
 void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
-                                       const ieee802154_ext_addr_t *dst_addr,
+                                       ieee802154_addr_mode_t dst_mode,
+                                       const void *dst_addr,
                                        bool pending);
 /**
  * @brief Auto-free an indirect queue slot when it expires.
@@ -167,13 +183,15 @@ void ieee802154_mac_handle_indirectq_auto_free(ieee802154_mac_t *mac,
 /**
  * @brief Find an indirect queue slot by destination address.
  */
-int ieee802154_mac_indirectq_search_slot(ieee802154_mac_indirect_q_t *indirect_q,
-                                         const ieee802154_ext_addr_t *dst_addr);
+int ieee802154_mac_indirectq_search_slot(ieee802154_mac_t *mac,
+                                         ieee802154_addr_mode_t dst_mode,
+                                         const void *dst_addr);
 /**
  * @brief Get a slot index for the given destination address.
  */
-int ieee802154_mac_indirectq_get_slot(ieee802154_mac_indirect_q_t *indirect_q,
-                                      const ieee802154_ext_addr_t *dst_addr);
+int ieee802154_mac_indirectq_get_slot(ieee802154_mac_t *mac,
+                                      ieee802154_addr_mode_t dst_mode,
+                                      const void *dst_addr);
 /**
  * @brief Enqueue a data frame into the MAC TX queue.
  */
@@ -194,7 +212,9 @@ int ieee802154_mac_enqueue_data_request(ieee802154_mac_t *mac,
                                         ieee802154_addr_mode_t dst_mode,
                                         uint16_t *dst_panid,
                                         const void *dst_addr);
-
+/**
+ * @brief Enqueue an association request command.
+ */
 /**
  * @brief Enequeu a beacon request command.
  */
@@ -208,7 +228,16 @@ void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac);
 /**
  * @brief Handle a MAC FSM event and apply state transitions.
  */
-int ieee802154_mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev);
+int ieee802154_mac_fsm_process_ev_ctx(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev,
+                                      const ieee802154_mac_fsm_ctx_t *ctx);
+
+int ieee802154_mac_fsm_request(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev,
+                               const ieee802154_mac_fsm_ctx_t *ctx);
+
+const ieee802154_ext_addr_t *ieee802154_mac_addr_map_lookup(const ieee802154_mac_t *mac,
+                                                            uint16_t short_addr);
+void ieee802154_mac_addr_map_add(ieee802154_mac_t *mac, uint16_t short_addr,
+                                 const ieee802154_ext_addr_t *ext_addr);
 
 #ifdef __cplusplus
 }

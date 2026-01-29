@@ -284,6 +284,40 @@ typedef struct {
 } ieee802154_mlme_scan_req_t;
 
 /**
+ * @brief IEEE 802.15.4 association capability information.
+ */
+typedef union {
+    uint8_t u8;
+    struct {
+        uint8_t reserved0 : 1;
+        uint8_t device_type : 1;
+        uint8_t power_source : 1;
+        uint8_t rx_on_when_idle : 1;
+        uint8_t association_type : 1;
+        uint8_t suspendable_csma_ca : 1;
+        uint8_t security_capability : 1;
+        uint8_t allocate_address : 1;
+    } bits;
+} ieee802154_assoc_capability_t;
+
+/**
+ * @brief Pack association capability information into a byte.
+ */
+static inline uint8_t ieee802154_assoc_capability_pack(ieee802154_assoc_capability_t cap)
+{
+    return cap.u8;
+}
+
+/**
+ * @brief IEEE 802.15.4 association status.
+ */
+typedef enum {
+    IEEE802154_ASSOC_STATUS_SUCCESS = 0,
+    IEEE802154_ASSOC_STATUS_PAN_AT_CAPACITY = 1,
+    IEEE802154_ASSOC_STATUS_PAN_ACCESS_DENIED = 2,
+} ieee802154_assoc_status_t;
+
+/**
  * @brief IEEE 802.15.4 MAC MLME-SCAN.confirm callback.
  */
 typedef void (*ieee802154_mlme_scan_confirm_cb_t)(void *mac, int status,
@@ -314,6 +348,22 @@ typedef void (*ieee802154_mlme_get_confirm_cb_t)(void *mac,
 typedef void (*ieee802154_mlme_start_confirm_cb_t)(void *mac,
                                                    uint8_t handle,
                                                    int status);
+
+/**
+ * @brief IEEE 802.15.4 MAC MLME-ASSOCIATE.indication callback.
+ */
+typedef void (*ieee802154_mlme_associate_indication_cb_t)(void *mac,
+                                                          const uint8_t *device_addr,
+                                                          uint8_t device_addr_len,
+                                                          ieee802154_addr_mode_t device_addr_mode,
+                                                          ieee802154_assoc_capability_t cap);
+
+/**
+ * @brief IEEE 802.15.4 MAC MLME-ASSOCIATE.confirm callback.
+ */
+typedef void (*ieee802154_mlme_associate_confirm_cb_t)(void *mac,
+                                                       int status,
+                                                       uint16_t short_addr);
 
 /**
  * @brief IEEE 802.15.4 MAC ACK timeout callback.
@@ -361,6 +411,8 @@ typedef struct {
     ieee802154_mcps_data_indication_cb_t data_indication;       /**< MCPS-DATA.indication callback*/
     ieee802154_mlme_scan_confirm_cb_t mlme_scan_confirm;        /**< MLME-SCAN.confirm callback */
     ieee802154_mlme_start_confirm_cb_t mlme_start_confirm;      /**< MLME-START.confirm callback */
+    ieee802154_mlme_associate_indication_cb_t mlme_associate_indication; /**< MLME-ASSOCIATE.indication callback */
+    ieee802154_mlme_associate_confirm_cb_t mlme_associate_confirm; /**< MLME-ASSOCIATE.confirm callback */
     ieee802154_mac_ack_timeout_fired_cb_t ack_timeout;          /**< ieee802154_mac_ack_timeout_fired() should be dispatched */
     ieee802154_mac_bh_request_cb_t bh_request;                  /**< ieee802154_mac_bh_process() should be dispatched */
     ieee802154_radio_cb_request_t radio_cb_request;             /**< ieee802154_mac_handle_radio() should be dispatched */
@@ -415,7 +467,10 @@ typedef struct {
  */
 typedef struct {
     ieee802154_mac_tx_desc_t q[IEEE802154_MAC_TXQ_LEN]; /**< outgoing queue */
-    eui64_t dst_addr;
+    ieee802154_ext_addr_t dst_ext_addr;                 /**< key or destination extended addr */
+    uint16_t dst_short_addr;                            /**< destination short addr */
+    ieee802154_addr_mode_t key_mode;                    /**< key type for queue matching */
+    ieee802154_addr_mode_t dst_mode;                    /**< destination addr mode for frame */
     bool has_dst_addr;
     uint8_t head;                                       /**< queue head */
     uint8_t tail;                                       /**< queue tail */
@@ -437,12 +492,22 @@ typedef struct {
 } ieee802154_mac_indirect_q_t;
 
 /**
+ * @brief IEEE 802.15.4 MAC short-to-extended address map entry.
+ */
+typedef struct {
+    bool in_use;
+    uint16_t short_addr;
+    const ieee802154_ext_addr_t *ext_addr;
+} ieee802154_mac_addr_map_t;
+
+/**
  * @brief IEEE 802.15.4 MAC descriptor
  */
 typedef struct {
     bool is_coordinator;
+    bool coord_softmode;
     ieee802154_mac_state_t state;
-    ieee802154_mac_state_t state_before_scan;
+    ieee802154_mac_state_t state_history;
     ieee802154_pib_t pib;                                       /**< PIB of the MAC */
     mutex_t pib_lock;
     ieee802154_submac_t submac;                                 /**< SubMAC descriptor */
@@ -453,12 +518,16 @@ typedef struct {
     uint8_t cmd_buf[IEEE802154_FRAME_LEN_MAX];                  /**< receiving buf */
     iolist_t cmd;
     ieee802154_mac_indirect_q_t indirect_q;
+    ieee802154_mac_addr_map_t addr_map[IEEE802154_MAC_TX_INDIRECTQ_SIZE];
+    ieee802154_ext_addr_t addr_map_ext[IEEE802154_MAC_TX_INDIRECTQ_SIZE];
     uint16_t sym_us;
     ieee802154_mlme_scan_req_t *scan_req;
     bool scan_active;
     uint8_t scan_idx;
     ztimer_t scan_timer;
     bool scan_timer_pending;
+    bool assoc_pending;
+    uint16_t assoc_deadline_tick;
     bool poll_rx_active;
     uint16_t poll_rx_deadline;
 } ieee802154_mac_t;
@@ -498,6 +567,9 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac);
  * @brief Process the active scan timer in thread context.
  */
 void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac);
+/**
+ * @brief Process the association response timer in thread context.
+ */
 
 /**
  * @brief Init the IEEE 802.15.4 MAC
@@ -541,7 +613,19 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
 /**
  * @brief Issue a MAC MLME-ASSOCIATE request.
  */
-int ieee802154_mac_mlme_associate(void);
+int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
+                                          ieee802154_addr_mode_t coord_mode,
+                                          uint16_t coord_panid,
+                                          const void *coord_addr,
+                                          ieee802154_assoc_capability_t capability);
+/**
+ * @brief Issue a MAC MLME-ASSOCIATE response (coordinator).
+ */
+int ieee802154_mac_mlme_associate_response(ieee802154_mac_t *mac,
+                                           ieee802154_addr_mode_t dst_mode,
+                                           const void *dst_addr,
+                                           ieee802154_assoc_status_t status,
+                                           uint16_t short_addr);
 /**
  * @brief Issue a MAC MLME-POLL request.
  */

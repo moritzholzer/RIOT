@@ -18,9 +18,8 @@
 
 #include "isrpipe.h"
 #include "net/ieee802154/mac.h"
-#include "net/ieee802154/mac_internal.h"
-#include "net/ieee802154/mac_pib.h"
-#include "net/ieee802154/mac_internal.h"
+#include "mac_internal_priv.h"
+#include "mac_pib.h"
 
 #define ENABLE_DEBUG 1
 #include "debug.h"
@@ -53,6 +52,7 @@ void ieee802154_mac_mlme_get_request(ieee802154_mac_t *mac,
 void ieee802154_mac_init(ieee802154_mac_t *mac,
                          const ieee802154_mac_cbs_t *cbs)
 {
+    puts("init\n");
     memset(mac, 0, sizeof(*mac));
     mac->cbs = *cbs;
     mac->cbs.mac = mac;
@@ -76,9 +76,9 @@ int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type
     if (req->results_used) {
         *req->results_used = 0;
     }
-    
 
-    if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_SCAN_START) < 0) {
+
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_SCAN_START, NULL) < 0) {
         mac->scan_req = NULL;
         mac->scan_active = false;
         return -EBUSY;
@@ -91,8 +91,8 @@ int ieee802154_mlme_start_request(ieee802154_mac_t *mac,
                                   uint16_t channel)
 {
     (void)channel;
-    
-    if (ieee802154_mac_fsm_process_ev(mac, IEEE802154_MAC_FSM_EV_COORD_START) < 0)
+
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_COORD_START, NULL) < 0)
     {
         DEBUG("IEEE802154 MAC: failed to start as coordinator\n");
     }
@@ -109,24 +109,111 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  bool ack_req,
                                  bool indirect)
 {
-    return ieee802154_mac_data_request_fsm(mac, src_mode, dst_mode, dst_panid,
-                                           dst_addr, msdu, msdu_handle,
-                                           ack_req, indirect);
+    if (!mac) {
+        return -EINVAL;
+    }
+
+    int res = -EINVAL;
+    ieee802154_mac_fsm_ctx_t ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.data_dst_addr = dst_addr;
+    ctx.msdu = msdu;
+    ctx.msdu_handle = msdu_handle;
+    ctx.src_mode = src_mode;
+    ctx.dst_mode = dst_mode;
+    ctx.dst_panid = dst_panid;
+    ctx.ack_req = ack_req;
+    ctx.indirect = indirect;
+    ctx.result = &res;
+
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MCPS_DATA_REQ, &ctx) < 0) {
+        return -EBUSY;
+    }
+
+    return res;
+}
+
+int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
+                                          ieee802154_addr_mode_t coord_mode,
+                                          uint16_t coord_panid,
+                                          const void *coord_addr,
+                                          ieee802154_assoc_capability_t capability)
+{
+    if (!mac) {
+        return -EINVAL;
+    }
+
+    int res = -EINVAL;
+    ieee802154_mac_fsm_ctx_t ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.dst_addr = coord_addr;
+    ctx.data_dst_addr = coord_addr;
+    ctx.dst_mode = coord_mode;
+    ctx.dst_panid = coord_panid;
+    ctx.capability = capability;
+    ctx.result = &res;
+
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MLME_ASSOC_REQ, &ctx) < 0) {
+        return -EBUSY;
+    }
+
+    return res;
+}
+
+int ieee802154_mac_mlme_associate_response(ieee802154_mac_t *mac,
+                                           ieee802154_addr_mode_t dst_mode,
+                                           const void *dst_addr,
+                                           ieee802154_assoc_status_t status,
+                                           uint16_t short_addr)
+{
+    if (!mac || !dst_addr) {
+        return -EINVAL;
+    }
+
+    int res = -EINVAL;
+    ieee802154_mac_fsm_ctx_t ctx;
+    ieee802154_pib_value_t panid;
+
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_PAN_ID, &panid);
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.dst_addr = dst_addr;
+    ctx.data_dst_addr = dst_addr;
+    ctx.dst_mode = dst_mode;
+    ctx.dst_panid = panid.v.u16;
+    ctx.assoc_status = (uint8_t)status;
+    ctx.assoc_short_addr = short_addr;
+    ctx.result = &res;
+
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MLME_ASSOC_RES, &ctx) < 0) {
+        return -EBUSY;
+    }
+
+    return res;
 }
 
 int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord_mode,
                              uint16_t coord_panid, const void *coord_addr)
 {
-    mutex_lock(&mac->submac_lock);
-    int res = ieee802154_mac_enqueue_data_request(mac, coord_mode, &coord_panid, coord_addr);
-    
-
-    if (res < 0) {
-        return res;
+    if (!mac) {
+        return -EINVAL;
     }
 
-    res = ieee802154_mac_tx(mac, coord_addr);
-    mutex_unlock(&mac->submac_lock);
+    int res = -EINVAL;
+    ieee802154_mac_fsm_ctx_t ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.dst_addr = coord_addr;
+    ctx.data_dst_addr = coord_addr;
+    ctx.dst_mode = coord_mode;
+    ctx.dst_panid = coord_panid;
+    ctx.result = &res;
+
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MLME_POLL, &ctx) < 0) {
+        return -EBUSY;
+    }
 
     return res;
 }

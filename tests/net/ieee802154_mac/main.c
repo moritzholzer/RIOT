@@ -25,6 +25,7 @@ static void _ev_tick_handler(event_t *event);
 static void _ev_scan_timer_handler(event_t *event);
 static void _ev_alloc_handler(event_t *event);                       /**< Set RX event handler */
 static void _ev_rx_handler(event_t *event);
+static void _ev_assoc_indication_handler(event_t *event);
 
 //static event_t ev_data_confirm = { .handler = _ev_data_confirm_handler };         /**< TX Done descriptor */         /**< RX Done descriptor */
 static event_t ev_bh_request = { .handler = _ev_bh_request_handler };   /**< BH Request descriptor */
@@ -34,6 +35,7 @@ static event_t ev_scan_timer = { .handler = _ev_scan_timer_handler };
 static event_t ev_alloc = { .handler = _ev_alloc_handler };               /**< Set RX descriptor */
 static event_t ev_radio = { .handler = _ev_radio_handler };
 static event_t ev_rx = { .handler = _ev_rx_handler };
+static event_t ev_assoc_indication = { .handler = _ev_assoc_indication_handler };
 
 typedef struct {
     bool in_use;
@@ -48,6 +50,15 @@ static uint16_t scan_channels[16];
 static ieee802154_scan_result_t scan_results[16];
 static size_t scan_results_used;
 static ieee802154_mlme_scan_req_t scan_req;
+static mutex_t assoc_lock;
+static uint16_t assoc_short_addr_next = 0x0100;
+static struct {
+    bool pending;
+    uint8_t addr[IEEE802154_LONG_ADDRESS_LEN];
+    uint8_t addr_len;
+    ieee802154_addr_mode_t addr_mode;
+    ieee802154_assoc_capability_t cap;
+} assoc_req;
 
 static const uint8_t payload[] =
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam ornare" \
@@ -178,6 +189,34 @@ static void my_scan_confirm(void *arg, int status,
     }
 }
 
+static void my_associate_indication(void *arg,
+                                    const uint8_t *device_addr,
+                                    uint8_t device_addr_len,
+                                    ieee802154_addr_mode_t device_addr_mode,
+                                    ieee802154_assoc_capability_t cap)
+{
+    (void)arg;
+    if (!device_addr || (device_addr_len == 0)) {
+        return;
+    }
+
+    mutex_lock(&assoc_lock);
+    assoc_req.pending = true;
+    assoc_req.addr_len = device_addr_len;
+    assoc_req.addr_mode = device_addr_mode;
+    assoc_req.cap = cap;
+    memcpy(assoc_req.addr, device_addr, device_addr_len);
+    mutex_unlock(&assoc_lock);
+
+    event_post(EVENT_PRIO_HIGHEST, &ev_assoc_indication);
+}
+
+static void my_associate_confirm(void *arg, int status, uint16_t short_addr)
+{
+    (void)arg;
+    printf("ASSOC confirm status=%d short_addr=0x%04x\n", status, short_addr);
+}
+
 static void _ev_tick_handler(event_t *event)
 {
     (void)event;
@@ -268,6 +307,34 @@ static void _ev_rx_handler(event_t *event)
     }
 }
 
+static void _ev_assoc_indication_handler(event_t *event)
+{
+    (void)event;
+    uint8_t addr_len;
+    ieee802154_addr_mode_t mode;
+    ieee802154_assoc_capability_t cap;
+    uint8_t addr[IEEE802154_LONG_ADDRESS_LEN];
+
+    mutex_lock(&assoc_lock);
+    if (!assoc_req.pending) {
+        mutex_unlock(&assoc_lock);
+        return;
+    }
+    assoc_req.pending = false;
+    addr_len = assoc_req.addr_len;
+    mode = assoc_req.addr_mode;
+    cap = assoc_req.cap;
+    memcpy(addr, assoc_req.addr, addr_len);
+    mutex_unlock(&assoc_lock);
+
+    (void)cap;
+    int res = ieee802154_mac_mlme_associate_response(&mac, mode, addr,
+                                                     IEEE802154_ASSOC_STATUS_SUCCESS,
+                                                     assoc_short_addr_next++);
+    if (res < 0) {
+        printf("ASSOC response failed: %d (%s)\n", res, strerror(-res));
+    }
+}
 static int start(int argc, char **argv)
 {
     (void)argc;
@@ -410,11 +477,14 @@ static int txtsnd(int argc, char **argv)
 static int _init(void)
 {
     mutex_init(&buf_lock);
+    mutex_init(&assoc_lock);
     memset(buf_pool, 0, sizeof(mac_buf_t) * IEEE802154_MAC_TEST_BUF_SIZE);
     ieee802154_mac_cbs_t cbs = {
         .data_confirm = my_confirm,
         .data_indication = my_ind,
         .mlme_scan_confirm = my_scan_confirm,
+        .mlme_associate_indication = my_associate_indication,
+        .mlme_associate_confirm = my_associate_confirm,
         .scan_timer_request = my_scan_timer,
         .tick_request = my_tick,
         .bh_request = my_bh_cb,
