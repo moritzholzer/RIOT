@@ -589,7 +589,18 @@ static int _config_addr_filter(ieee802154_dev_t *dev, ieee802154_af_cmd_t cmd, c
             kw2xrf_set_pan(kw_dev, *pan_id);
             break;
         case IEEE802154_AF_PAN_COORD:
-            return -ENOTSUP;
+        {
+            const bool *coord = value;
+            if (coord && *coord) {
+                kw2xrf_set_dreg_bit(kw_dev, MKW2XDM_PHY_CTRL4,
+                                    MKW2XDM_PHY_CTRL4_PANCORDNTR0);
+            }
+            else {
+                kw2xrf_clear_dreg_bit(kw_dev, MKW2XDM_PHY_CTRL4,
+                                      MKW2XDM_PHY_CTRL4_PANCORDNTR0);
+            }
+            break;
+        }
     }
 
     return 0;
