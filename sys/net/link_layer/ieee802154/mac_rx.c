@@ -160,10 +160,11 @@ void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
         case IEEE802154_CMD_ASSOCIATION_RES:
             DEBUG("IEEE802154 MAC: IEEE802154_CMD_ASSOCIATION_RES\n");
             ev = IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES;
-            if ((size_t)len >= (size_t)mhr_len + 3U) {
+            if ((size_t)len >= (size_t)mhr_len + 4U) {
                 const uint8_t *pl = ((const uint8_t *)buf->iol_base) + mhr_len;
-                ctx.assoc_short_addr = (uint16_t)pl[0] | ((uint16_t)pl[1] << 8);
-                ctx.assoc_status = pl[2];
+                /* pl[0] is command ID */
+                ctx.assoc_short_addr = (uint16_t)pl[1] | ((uint16_t)pl[2] << 8);
+                ctx.assoc_status = pl[3];
             }
             break;
         case IEEE802154_CMD_DISASSOCIATION:
@@ -183,6 +184,13 @@ void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
     }
     if (do_fsm) {
         (void)ieee802154_mac_fsm_process_ev_ctx(mac, ev, &ctx);
+    }
+    /* Free RX buffers for frames handled entirely inside MAC.
+     * DATA frames are freed by data_indication callback. */
+    if (frame_type != IEEE802154_FCF_TYPE_DATA || !mac->cbs.data_indication) {
+        if (mac->cbs.dealloc_request) {
+            mac->cbs.dealloc_request(mac, buf);
+        }
     }
     if (mac->scan_active)
     {

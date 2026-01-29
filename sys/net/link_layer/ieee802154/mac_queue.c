@@ -182,9 +182,21 @@ void ieee802154_mac_handle_indirectq_auto_free(ieee802154_mac_t *mac,
     ieee802154_mac_txq_t *txq = &indirect_q->q[slot];
 
     if (ieee802154_mac_tx_empty(txq)) {
-        ieee802154_ext_addr_t dst_addr = txq->dst_ext_addr;
+        const ieee802154_addr_mode_t key_mode = txq->key_mode;
+        const void *dst_addr = NULL;
+        uint16_t dst_short = 0;
+        ieee802154_ext_addr_t dst_ext;
+
+        if (key_mode == IEEE802154_ADDR_MODE_SHORT) {
+            dst_short = txq->dst_short_addr;
+            dst_addr = &dst_short;
+        }
+        else if (key_mode == IEEE802154_ADDR_MODE_EXTENDED) {
+            dst_ext = txq->dst_ext_addr;
+            dst_addr = &dst_ext;
+        }
         ieee802154_indirectq_free_slot(indirect_q, slot);
-        ieee802154_mac_indirect_fp_update(mac, txq->key_mode, &dst_addr, false);
+        ieee802154_mac_indirect_fp_update(mac, key_mode, dst_addr, false);
     }
     else {
         ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);

@@ -203,12 +203,20 @@ int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord
 
     int res = -EINVAL;
     ieee802154_mac_fsm_ctx_t ctx;
+    ieee802154_pib_value_t short_addr;
 
     memset(&ctx, 0, sizeof(ctx));
     ctx.dst_addr = coord_addr;
     ctx.data_dst_addr = coord_addr;
     ctx.dst_mode = coord_mode;
     ctx.dst_panid = coord_panid;
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr);
+    if (short_addr.v.short_addr.u16 != 0xFFFFU) {
+        ctx.src_mode = IEEE802154_ADDR_MODE_SHORT;
+    }
+    else {
+        ctx.src_mode = IEEE802154_ADDR_MODE_EXTENDED;
+    }
     ctx.result = &res;
 
     if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MLME_POLL, &ctx) < 0) {

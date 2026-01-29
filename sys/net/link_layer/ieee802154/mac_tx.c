@@ -26,6 +26,15 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(&indirect_q->q[slot]);
     d->tx_state = IEEE802154_TX_STATE_DONE;
     DEBUG("IEEE802154 MAC: TX state DONE (handle=%u, status=%d)\n", d->handle, status);
+    if (d->indirect &&
+        ((status == TX_STATUS_MEDIUM_BUSY) || (status == TX_STATUS_NO_ACK))) {
+        d->tx_state = IEEE802154_TX_STATE_QUEUED;
+        mac->indirect_q.busy = false;
+        if (mac->is_coordinator || mac->scan_active || mac->assoc_pending) {
+            mac->cbs.rx_request(mac);
+        }
+        return;
+    }
     if ((d->type == IEEE802154_FCF_TYPE_DATA) && mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
     }
@@ -35,7 +44,8 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
         mac->poll_rx_active = true;
         mac->poll_rx_deadline = ieee802154_indirect_get_deadline(mac);
     }
-    if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) || mac->scan_active) {
+    if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) || mac->scan_active ||
+        mac->assoc_pending) {
         mac->cbs.rx_request(mac);
     }
     d->in_use = false;

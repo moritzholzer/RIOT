@@ -6,9 +6,12 @@
 #include <string.h>
 
 #include "mutex.h"
+#include "byteorder.h"
 
 #include "mac_internal_priv.h"
 #include "mac_pib.h"
+#include "net/ieee802154/mac.h"
+#include "net/eui_provider.h"
 
 #define ENABLE_DEBUG 1
 #include "debug.h"
@@ -24,6 +27,7 @@ static int _mac_assoc_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ct
 static int _mac_poll_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx);
 static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx);
 static int _mac_enqueue_beacon(ieee802154_mac_t *mac);
+static void _debug_data_req(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx);
 static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
                                                   ieee802154_mac_fsm_ev_t ev,
                                                   const ieee802154_mac_fsm_ctx_t *ctx);
@@ -151,8 +155,12 @@ static int _mac_poll_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx
     mac->cmd.iol_len = 1;
     mac->cmd.iol_next = NULL;
     uint8_t handle = 0xFFU;
+    ieee802154_addr_mode_t src_mode = ctx->dst_mode;
+    if (ctx->src_mode != IEEE802154_ADDR_MODE_NONE) {
+        src_mode = ctx->src_mode;
+    }
 
-    return _mac_enqueue_and_tx(mac, ctx, ctx->dst_mode, IEEE802154_FCF_TYPE_MACCMD,
+    return _mac_enqueue_and_tx(mac, ctx, src_mode, IEEE802154_FCF_TYPE_MACCMD,
                                &mac->cmd, &handle, true, false);
 }
 
@@ -180,6 +188,25 @@ static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
     return _mac_enqueue_and_tx(mac, ctx, ctx->dst_mode, IEEE802154_FCF_TYPE_MACCMD,
                                &mac->cmd, &handle, true, false);
 }
+
+static void _debug_data_req(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
+{
+    if (!mac || !ctx) {
+        return;
+    }
+
+    ieee802154_filter_mode_t mode;
+    int res = ieee802154_radio_get_frame_filter_mode(&mac->submac.dev, &mode);
+    if (res == 0) {
+        DEBUG("IEEE802154 MAC: RX_CMD_DATA_REQ src_mode=%u src_len=%d filter=%u\n",
+              (unsigned)ctx->src_mode, ctx->src_len, (unsigned)mode);
+    }
+    else {
+        DEBUG("IEEE802154 MAC: RX_CMD_DATA_REQ src_mode=%u src_len=%d filter=na(%d)\n",
+              (unsigned)ctx->src_mode, ctx->src_len, res);
+    }
+}
+
 static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
                                                   ieee802154_mac_fsm_ev_t ev,
                                                   const ieee802154_mac_fsm_ctx_t *ctx)
@@ -224,6 +251,7 @@ static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_IDLE;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
         if (ctx) {
+            _debug_data_req(mac, ctx);
             const void *src_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
                                     ? (const void *)ctx->src
                                     : (const void *)&ctx->src_addr;
@@ -331,6 +359,7 @@ static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
         if (ctx) {
+            _debug_data_req(mac, ctx);
             const void *src_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
                                     ? (const void *)ctx->src
                                     : (const void *)&ctx->src_addr;
@@ -380,6 +409,7 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_COORDINATOR;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
         if (ctx) {
+            _debug_data_req(mac, ctx);
             const void *src_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
                                     ? (const void *)ctx->src
                                     : (const void *)&ctx->src_addr;
@@ -486,10 +516,13 @@ static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
         if (ctx && ctx->assoc_status == 0) {
             ieee802154_pib_value_t short_addr_value = {
                 .type = IEEE802154_PIB_TYPE_NUI16,
-                .v.u16 = ctx->assoc_short_addr,
+                .v.short_addr = byteorder_htons(ctx->assoc_short_addr),
             };
             ieee802154_mac_mlme_set(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr_value);
-            (void)ieee802154_set_short_addr(&mac->submac, &short_addr_value.v.short_addr);
+            if (ieee802154_set_short_addr(&mac->submac, &short_addr_value.v.short_addr) != 0)
+            {
+                DEBUG("IEEE802154 MAC: assoc, error setting short address\n");
+            }
             (void)ieee802154_set_idle(&mac->submac);
             return IEEE802154_MAC_STATE_DEVICE;
         }
@@ -656,6 +689,13 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
     if (ev  == IEEE802154_MAC_FSM_EV_COORD_START)
     {
         bool coord = true;
+        ieee802154_pib_value_t pib_value;
+        ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &pib_value);
+        network_uint16_t short_addr;
+        eui_short_from_eui64(&pib_value.v.ext_addr, &short_addr);
+        pib_value.type = IEEE802154_PIB_TYPE_NUI16;
+        pib_value.v.short_addr = short_addr;
+        ieee802154_mac_mlme_set_request(mac, IEEE802154_PIB_SHORT_ADDR, &pib_value);
         int res = ieee802154_radio_config_addr_filter(&mac->submac.dev,IEEE802154_AF_PAN_COORD, (void*) &coord);
         if (res == -ENOTSUP)
         {
