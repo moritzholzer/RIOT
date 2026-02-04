@@ -46,6 +46,7 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     }
     if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) || mac->scan_active ||
         mac->assoc_pending) {
+        DEBUG("TX_STATUS_FRAME_PENDING\n");
         mac->cbs.rx_request(mac);
     }
     d->in_use = false;

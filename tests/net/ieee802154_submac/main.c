@@ -220,7 +220,7 @@ void _print_addr(uint8_t *addr, size_t addr_len)
 
 /****** Upper layer implementation ******/
 #define IEEE802154_LONG_ADDRESS_LEN_STR_MAX \
-    (sizeof("00:00:00:00:00:00:00:00"))
+    (sizeof("00:00:00:00"))
 
 static int print_addr(int argc, char **argv)
 {
@@ -228,7 +228,7 @@ static int print_addr(int argc, char **argv)
     (void)argv;
     char addr_str[IEEE802154_LONG_ADDRESS_LEN_STR_MAX];
     printf("%s\n", l2util_addr_to_str(
-               long_addr.uint8, IEEE802154_LONG_ADDRESS_LEN, addr_str));
+               short_addr.u8, IEEE802154_SHORT_ADDRESS_LEN, addr_str));
     return 0;
 }
 
@@ -382,7 +382,7 @@ static int send(uint8_t *dst, size_t dst_len,
     src_pan = byteorder_btols(byteorder_htons(CONFIG_IEEE802154_DEFAULT_PANID));
     dst_pan = byteorder_btols(byteorder_htons(CONFIG_IEEE802154_DEFAULT_PANID));
 
-    uint8_t src_len = IEEE802154_LONG_ADDRESS_LEN;
+    uint8_t src_len = IEEE802154_SHORT_ADDRESS_LEN;
     void *src = &submac.ext_addr;
 
     /* fill MAC header, seq should be set by device */
@@ -410,7 +410,7 @@ static int send(uint8_t *dst, size_t dst_len,
 
 static int txtsnd(int argc, char **argv)
 {
-    uint8_t addr[IEEE802154_LONG_ADDRESS_LEN];
+    uint8_t addr[IEEE802154_SHORT_ADDRESS_LEN];
     size_t len;
     size_t res;
 

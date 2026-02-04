@@ -135,22 +135,32 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
 }
 
 int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
-                                          ieee802154_addr_mode_t coord_mode,
+                                          const ieee802154_addr_t *coord_addr,
                                           uint16_t coord_panid,
-                                          const void *coord_addr,
                                           ieee802154_assoc_capability_t capability)
 {
-    if (!mac) {
+    if (!mac || !coord_addr) {
         return -EINVAL;
     }
 
     int res = -EINVAL;
     ieee802154_mac_fsm_ctx_t ctx;
+    const void *addr = NULL;
+
+    if (coord_addr->type == IEEE802154_ADDR_MODE_SHORT) {
+        addr = &coord_addr->v.short_addr;
+    }
+    else if (coord_addr->type == IEEE802154_ADDR_MODE_EXTENDED) {
+        addr = &coord_addr->v.ext_addr;
+    }
+    else {
+        return -EINVAL;
+    }
 
     memset(&ctx, 0, sizeof(ctx));
-    ctx.dst_addr = coord_addr;
-    ctx.data_dst_addr = coord_addr;
-    ctx.dst_mode = coord_mode;
+    ctx.dst_addr = addr;
+    ctx.data_dst_addr = addr;
+    ctx.dst_mode = coord_addr->type;
     ctx.dst_panid = coord_panid;
     ctx.capability = capability;
     ctx.result = &res;
@@ -163,8 +173,7 @@ int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
 }
 
 int ieee802154_mac_mlme_associate_response(ieee802154_mac_t *mac,
-                                           ieee802154_addr_mode_t dst_mode,
-                                           const void *dst_addr,
+                                           const ieee802154_addr_t *dst_addr,
                                            ieee802154_assoc_status_t status,
                                            uint16_t short_addr)
 {
@@ -175,19 +184,34 @@ int ieee802154_mac_mlme_associate_response(ieee802154_mac_t *mac,
     int res = -EINVAL;
     ieee802154_mac_fsm_ctx_t ctx;
     ieee802154_pib_value_t panid;
+    const void *addr = NULL;
+
+    if (dst_addr->type == IEEE802154_ADDR_MODE_SHORT)
+    {
+        addr = &dst_addr->v.short_addr;
+    }
+    else if (dst_addr->type == IEEE802154_ADDR_MODE_EXTENDED)
+    {
+        addr = &dst_addr->v.ext_addr;
+    }
+    else
+    {
+        return -EINVAL;
+    }
 
     ieee802154_mac_mlme_get(mac, IEEE802154_PIB_PAN_ID, &panid);
 
     memset(&ctx, 0, sizeof(ctx));
-    ctx.dst_addr = dst_addr;
-    ctx.data_dst_addr = dst_addr;
-    ctx.dst_mode = dst_mode;
+    ctx.dst_addr = addr;
+    ctx.data_dst_addr = addr;
+    ctx.dst_mode = dst_addr->type;
     ctx.dst_panid = panid.v.u16;
     ctx.assoc_status = (uint8_t)status;
     ctx.assoc_short_addr = short_addr;
     ctx.result = &res;
 
-    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MLME_ASSOC_RES, &ctx) < 0) {
+    if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MLME_ASSOC_RES, &ctx) < 0)
+    {
         return -EBUSY;
     }
 

@@ -204,7 +204,7 @@ static void my_scan_confirm(void *arg, int status,
         else if (res->coord_addr.type == IEEE802154_ADDR_MODE_SHORT) {
             printf("[%u] ch=%u pan=0x%04x addr=0x%04x lqi=%u rssi=%u\n",
                    (unsigned)i, res->channel, res->pan_id,
-                   res->coord_addr.v.short_addr.u16, res->lqi, res->rssi);
+                   byteorder_ntohs(res->coord_addr.v.short_addr), res->lqi, res->rssi);
         }
         else {
             printf("[%u] ch=%u pan=0x%04x addr=none lqi=%u rssi=%u\n",
@@ -361,12 +361,16 @@ static void _ev_assoc_indication_handler(event_t *event)
     int res;
     if ((mode == IEEE802154_ADDR_MODE_SHORT) && (addr_len >= 2)) {
         network_uint16_t dst_short = { .u8 = { addr[0], addr[1] } };
-        res = ieee802154_mac_mlme_associate_response(&mac, mode, &dst_short,
+        ieee802154_addr_t dst = { .type = mode, .v.short_addr = dst_short };
+        res = ieee802154_mac_mlme_associate_response(&mac, &dst,
                                                      IEEE802154_ASSOC_STATUS_SUCCESS,
                                                      assoc_short_addr_next++);
     }
     else {
-        res = ieee802154_mac_mlme_associate_response(&mac, mode, addr,
+        ieee802154_ext_addr_t ext;
+        memcpy(ext.uint8, addr, IEEE802154_LONG_ADDRESS_LEN);
+        ieee802154_addr_t dst = { .type = mode, .v.ext_addr = ext };
+        res = ieee802154_mac_mlme_associate_response(&mac, &dst,
                                                      IEEE802154_ASSOC_STATUS_SUCCESS,
                                                      assoc_short_addr_next++);
     }
@@ -503,8 +507,9 @@ static int assoc_req_cmd(int argc, char **argv)
         mode = IEEE802154_ADDR_MODE_SHORT;
         uint16_t short_addr_host = (uint16_t)strtoul(argv[2], NULL, 0);
         network_uint16_t short_addr = byteorder_htons(short_addr_host);
-        return ieee802154_mac_mlme_associate_request(&mac, mode, panid,
-                                                     &short_addr, _assoc_cap_fixed);
+        ieee802154_addr_t addr = { .type = mode, .v.short_addr = short_addr };
+        return ieee802154_mac_mlme_associate_request(&mac, &addr, panid,
+                                                     _assoc_cap_fixed);
     }
     else if (strcmp(argv[1], "long") == 0) {
         mode = IEEE802154_ADDR_MODE_EXTENDED;
@@ -513,8 +518,9 @@ static int assoc_req_cmd(int argc, char **argv)
             puts("invalid long addr\n");
             return 1;
         }
-        return ieee802154_mac_mlme_associate_request(&mac, mode, panid,
-                                                     &ext, _assoc_cap_fixed);
+        ieee802154_addr_t addr = { .type = mode, .v.ext_addr = ext };
+        return ieee802154_mac_mlme_associate_request(&mac, &addr, panid,
+                                                     _assoc_cap_fixed);
     }
 
     puts("Usage: assoc_req <short|long> <addr> <panid>\n");
@@ -537,8 +543,9 @@ static int assoc_rsp_cmd(int argc, char **argv)
         mode = IEEE802154_ADDR_MODE_SHORT;
         uint16_t dst_short_host = (uint16_t)strtoul(argv[2], NULL, 0);
         network_uint16_t dst_short = byteorder_htons(dst_short_host);
-        return ieee802154_mac_mlme_associate_response(&mac, mode, &dst_short,
-                                                      status, short_addr);
+        ieee802154_addr_t addr = { .type = mode, .v.short_addr = dst_short };
+        return ieee802154_mac_mlme_associate_response(&mac, &addr, status,
+                                                      short_addr);
     }
     else if (strcmp(argv[1], "long") == 0) {
         mode = IEEE802154_ADDR_MODE_EXTENDED;
@@ -547,8 +554,9 @@ static int assoc_rsp_cmd(int argc, char **argv)
             puts("invalid long addr\n");
             return 1;
         }
-        return ieee802154_mac_mlme_associate_response(&mac, mode, &ext,
-                                                      status, short_addr);
+        ieee802154_addr_t addr = { .type = mode, .v.ext_addr = ext };
+        return ieee802154_mac_mlme_associate_response(&mac, &addr, status,
+                                                      short_addr);
     }
 
     puts("Usage: assoc_rsp <short|long> <addr> <status> <short_addr>\n");
@@ -722,11 +730,11 @@ static int _init(void)
 
     ieee802154_pib_value_t pib_value;
     eui64_t long_addr;
-    
+
     luid_base(&long_addr, sizeof(long_addr));
     eui64_set_local(&long_addr);
     eui64_clear_group(&long_addr);
-    
+
     pib_value.type = IEEE802154_PIB_TYPE_EUI64;
     pib_value.v.ext_addr = long_addr;
     ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_EXTENDED_ADDRESS, &pib_value);

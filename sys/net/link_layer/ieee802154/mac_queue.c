@@ -142,7 +142,7 @@ void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
 #  ifdef IEEE802154_MAC_HAS_SRC_ADDR_MATCH
     if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
         if (dst_addr) {
-            const uint16_t *short_addr = (const uint16_t *)dst_addr;
+            const network_uint16_t *short_addr = (const network_uint16_t *)dst_addr;
             ieee802154_radio_config_src_address_match(dev,
                                                       pending ? IEEE802154_SRC_MATCH_SHORT_ADD
                                                               : IEEE802154_SRC_MATCH_SHORT_CLEAR,
@@ -184,7 +184,7 @@ void ieee802154_mac_handle_indirectq_auto_free(ieee802154_mac_t *mac,
     if (ieee802154_mac_tx_empty(txq)) {
         const ieee802154_addr_mode_t key_mode = txq->key_mode;
         const void *dst_addr = NULL;
-        uint16_t dst_short = 0;
+        network_uint16_t dst_short = { .u16 = 0 };
         ieee802154_ext_addr_t dst_ext;
 
         if (key_mode == IEEE802154_ADDR_MODE_SHORT) {
@@ -285,6 +285,7 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
         .type = IEEE802154_PIB_TYPE_U8,
         .v.u8 = dsn.v.u8 + 1,
     };
+    ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
     uint16_t deadline = ieee802154_indirect_get_deadline(mac);
     dsc->deadline_tick = deadline;
     if (was_empty) {
@@ -294,26 +295,25 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
     if (indirect) {
         ieee802154_mac_indirect_fp_update(mac, dst_mode, dst_addr, true);
     }
-    ieee802154_mac_mlme_set(mac, IEEE802154_PIB_DSN, &dsn_new);
     return 0;
 }
 
 const ieee802154_ext_addr_t *ieee802154_mac_addr_map_lookup(const ieee802154_mac_t *mac,
-                                                            uint16_t short_addr)
+                                                            network_uint16_t short_addr)
 {
     for (int i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
         const ieee802154_mac_addr_map_t *m = &mac->addr_map[i];
         if (!m->in_use) {
             continue;
         }
-        if (m->short_addr == short_addr) {
+        if (m->short_addr.u16 == short_addr.u16) {
             return m->ext_addr;
         }
     }
     return NULL;
 }
 
-void ieee802154_mac_addr_map_add(ieee802154_mac_t *mac, uint16_t short_addr,
+void ieee802154_mac_addr_map_add(ieee802154_mac_t *mac, network_uint16_t short_addr,
                                  const ieee802154_ext_addr_t *ext_addr)
 {
     if (!ext_addr) {
@@ -325,7 +325,7 @@ void ieee802154_mac_addr_map_add(ieee802154_mac_t *mac, uint16_t short_addr,
         if (!m->in_use) {
             continue;
         }
-        if (m->short_addr == short_addr) {
+        if (m->short_addr.u16 == short_addr.u16) {
             mac->addr_map_ext[i] = *ext_addr;
             m->ext_addr = &mac->addr_map_ext[i];
             return;
@@ -365,10 +365,10 @@ int ieee802154_mac_indirectq_search_slot(ieee802154_mac_t *mac,
     }
 
     ieee802154_addr_mode_t key_mode = dst_mode;
-    uint16_t short_addr = 0;
+    network_uint16_t short_addr = { .u16 = 0 };
     const ieee802154_ext_addr_t *ext_addr = NULL;
     if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
-        short_addr = *(const uint16_t *)dst_addr;
+        short_addr = *(const network_uint16_t *)dst_addr;
         ext_addr = ieee802154_mac_addr_map_lookup(mac, short_addr);
         if (ext_addr) {
             key_mode = IEEE802154_ADDR_MODE_EXTENDED;
@@ -394,7 +394,7 @@ int ieee802154_mac_indirectq_search_slot(ieee802154_mac_t *mac,
             }
         }
         else if (key_mode == IEEE802154_ADDR_MODE_SHORT) {
-            if (q->dst_short_addr == short_addr) {
+            if (q->dst_short_addr.u16 == short_addr.u16) {
                 return i;
             }
         }
@@ -422,7 +422,7 @@ int ieee802154_mac_indirectq_get_slot(ieee802154_mac_t *mac,
         q->has_dst_addr = true;
         q->dst_mode = dst_mode;
         if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
-            q->dst_short_addr = *(const uint16_t *)dst_addr;
+            q->dst_short_addr = *(const network_uint16_t *)dst_addr;
             const ieee802154_ext_addr_t *ext = ieee802154_mac_addr_map_lookup(mac, q->dst_short_addr);
             if (ext) {
                 q->key_mode = IEEE802154_ADDR_MODE_EXTENDED;

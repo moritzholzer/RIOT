@@ -468,7 +468,7 @@ typedef struct {
 typedef struct {
     ieee802154_mac_tx_desc_t q[IEEE802154_MAC_TXQ_LEN]; /**< outgoing queue */
     ieee802154_ext_addr_t dst_ext_addr;                 /**< key or destination extended addr */
-    uint16_t dst_short_addr;                            /**< destination short addr */
+    network_uint16_t dst_short_addr;                    /**< destination short addr (network order) */
     ieee802154_addr_mode_t key_mode;                    /**< key type for queue matching */
     ieee802154_addr_mode_t dst_mode;                    /**< destination addr mode for frame */
     bool has_dst_addr;
@@ -496,7 +496,7 @@ typedef struct {
  */
 typedef struct {
     bool in_use;
-    uint16_t short_addr;
+    network_uint16_t short_addr;
     const ieee802154_ext_addr_t *ext_addr;
 } ieee802154_mac_addr_map_t;
 
@@ -612,18 +612,20 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
                                  bool indirect);
 /**
  * @brief Issue a MAC MLME-ASSOCIATE request.
+ *
+ * @note The coordinator address is expected in network byte order.
  */
 int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
-                                          ieee802154_addr_mode_t coord_mode,
+                                          const ieee802154_addr_t *coord_addr,
                                           uint16_t coord_panid,
-                                          const void *coord_addr,
                                           ieee802154_assoc_capability_t capability);
 /**
  * @brief Issue a MAC MLME-ASSOCIATE response (coordinator).
+ *
+ * @note The destination address is expected in network byte order.
  */
 int ieee802154_mac_mlme_associate_response(ieee802154_mac_t *mac,
-                                           ieee802154_addr_mode_t dst_mode,
-                                           const void *dst_addr,
+                                           const ieee802154_addr_t *dst_addr,
                                            ieee802154_assoc_status_t status,
                                            uint16_t short_addr);
 /**
