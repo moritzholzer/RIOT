@@ -298,58 +298,6 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
     return 0;
 }
 
-const ieee802154_ext_addr_t *ieee802154_mac_addr_map_lookup(const ieee802154_mac_t *mac,
-                                                            network_uint16_t short_addr)
-{
-    for (int i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
-        const ieee802154_mac_addr_map_t *m = &mac->addr_map[i];
-        if (!m->in_use) {
-            continue;
-        }
-        if (m->short_addr.u16 == short_addr.u16) {
-            return m->ext_addr;
-        }
-    }
-    return NULL;
-}
-
-void ieee802154_mac_addr_map_add(ieee802154_mac_t *mac, network_uint16_t short_addr,
-                                 const ieee802154_ext_addr_t *ext_addr)
-{
-    if (!ext_addr) {
-        return;
-    }
-
-    for (int i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
-        ieee802154_mac_addr_map_t *m = &mac->addr_map[i];
-        if (!m->in_use) {
-            continue;
-        }
-        if (m->short_addr.u16 == short_addr.u16) {
-            mac->addr_map_ext[i] = *ext_addr;
-            m->ext_addr = &mac->addr_map_ext[i];
-            return;
-        }
-        if (m->ext_addr &&
-            memcmp(m->ext_addr->uint8, ext_addr->uint8, IEEE802154_LONG_ADDRESS_LEN) == 0) {
-            m->short_addr = short_addr;
-            return;
-        }
-    }
-
-    for (int i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
-        ieee802154_mac_addr_map_t *m = &mac->addr_map[i];
-        if (m->in_use) {
-            continue;
-        }
-        mac->addr_map_ext[i] = *ext_addr;
-        m->ext_addr = &mac->addr_map_ext[i];
-        m->short_addr = short_addr;
-        m->in_use = true;
-        return;
-    }
-}
-
 int ieee802154_mac_indirectq_search_slot(ieee802154_mac_t *mac,
                                          ieee802154_addr_mode_t dst_mode,
                                          const void *dst_addr)
@@ -369,10 +317,6 @@ int ieee802154_mac_indirectq_search_slot(ieee802154_mac_t *mac,
     const ieee802154_ext_addr_t *ext_addr = NULL;
     if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
         short_addr = *(const network_uint16_t *)dst_addr;
-        ext_addr = ieee802154_mac_addr_map_lookup(mac, short_addr);
-        if (ext_addr) {
-            key_mode = IEEE802154_ADDR_MODE_EXTENDED;
-        }
     }
     else if (dst_mode == IEEE802154_ADDR_MODE_EXTENDED) {
         ext_addr = (const ieee802154_ext_addr_t *)dst_addr;
@@ -423,14 +367,7 @@ int ieee802154_mac_indirectq_get_slot(ieee802154_mac_t *mac,
         q->dst_mode = dst_mode;
         if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
             q->dst_short_addr = *(const network_uint16_t *)dst_addr;
-            const ieee802154_ext_addr_t *ext = ieee802154_mac_addr_map_lookup(mac, q->dst_short_addr);
-            if (ext) {
-                q->key_mode = IEEE802154_ADDR_MODE_EXTENDED;
-                q->dst_ext_addr = *ext;
-            }
-            else {
-                q->key_mode = IEEE802154_ADDR_MODE_SHORT;
-            }
+            q->key_mode = IEEE802154_ADDR_MODE_SHORT;
         }
         else if (dst_mode == IEEE802154_ADDR_MODE_EXTENDED) {
             q->key_mode = IEEE802154_ADDR_MODE_EXTENDED;

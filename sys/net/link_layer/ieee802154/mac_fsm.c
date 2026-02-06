@@ -129,7 +129,14 @@ static int _mac_assoc_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ct
     mac->cmd.iol_next = NULL;
     uint8_t handle = 0xFFU;
 
-    int res = _mac_enqueue_and_tx(mac, ctx, ctx->dst_mode, IEEE802154_FCF_TYPE_MACCMD,
+    ieee802154_pib_value_t short_addr;
+    ieee802154_addr_mode_t src_mode = IEEE802154_ADDR_MODE_EXTENDED;
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr);
+    if (short_addr.v.short_addr.u16 != 0xFFFFU) {
+        src_mode = IEEE802154_ADDR_MODE_SHORT;
+    }
+
+    int res = _mac_enqueue_and_tx(mac, ctx, src_mode, IEEE802154_FCF_TYPE_MACCMD,
                                   &mac->cmd, &handle, true, false);
     if (res < 0) {
         return res;
@@ -170,13 +177,6 @@ static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
         return -EINVAL;
     }
 
-    if ((ctx->assoc_status == IEEE802154_ASSOC_STATUS_SUCCESS) &&
-        (ctx->dst_mode == IEEE802154_ADDR_MODE_EXTENDED)) {
-        network_uint16_t short_addr = byteorder_htons(ctx->assoc_short_addr);
-        ieee802154_mac_addr_map_add(mac, short_addr,
-                                    (const ieee802154_ext_addr_t *)ctx->data_dst_addr);
-    }
-
     uint8_t *buf = (uint8_t *)mac->cmd.iol_base;
     buf[0] = IEEE802154_CMD_ASSOCIATION_RES;
     /* In the MAC payload it has to be little endian */
@@ -187,7 +187,14 @@ static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
     mac->cmd.iol_next = NULL;
     uint8_t handle = 0xFFU;
 
-    return _mac_enqueue_and_tx(mac, ctx, ctx->dst_mode, IEEE802154_FCF_TYPE_MACCMD,
+    ieee802154_pib_value_t short_addr;
+    ieee802154_addr_mode_t src_mode = IEEE802154_ADDR_MODE_EXTENDED;
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr);
+    if (short_addr.v.short_addr.u16 != 0xFFFFU) {
+        src_mode = IEEE802154_ADDR_MODE_SHORT;
+    }
+
+    return _mac_enqueue_and_tx(mac, ctx, src_mode, IEEE802154_FCF_TYPE_MACCMD,
                                &mac->cmd, &handle, true, false);
 }
 
@@ -333,6 +340,23 @@ static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
                 scan_res->pan_id = ctx->src_pan.u16;
                 scan_res->lqi = ctx->info->lqi;
                 scan_res->rssi = ctx->info->rssi;
+                scan_res->beacon_payload_len = 0;
+                if (ctx->buf && ctx->buf->iol_base) {
+                    int mhr_len = ieee802154_get_frame_hdr_len(ctx->buf->iol_base);
+                    if ((mhr_len >= 0) && ((size_t)mhr_len <= ctx->buf->iol_len)) {
+                        size_t payload_len = ctx->buf->iol_len - (size_t)mhr_len;
+                        size_t copy_len = payload_len;
+                        if (copy_len > IEEE802154_SCAN_BEACON_PAYLOAD_MAX) {
+                            copy_len = IEEE802154_SCAN_BEACON_PAYLOAD_MAX;
+                        }
+                        if (copy_len > 0) {
+                            const uint8_t *payload = ((const uint8_t *)ctx->buf->iol_base) +
+                                                     (size_t)mhr_len;
+                            memcpy(scan_res->beacon_payload, payload, copy_len);
+                            scan_res->beacon_payload_len = (uint8_t)copy_len;
+                        }
+                    }
+                }
                 if (ctx->src_len == IEEE802154_SHORT_ADDRESS_LEN) {
                     scan_res->coord_addr.type = IEEE802154_ADDR_MODE_SHORT;
                     memcpy(&scan_res->coord_addr.v.short_addr, ctx->src,
@@ -491,11 +515,24 @@ static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
     switch (ev) {
     case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES:
         mac->assoc_pending = false;
-        if (ctx && mac->cbs.mlme_associate_confirm) {
-            mac->cbs.mlme_associate_confirm(mac->cbs.mac, ctx->assoc_status,
-                                            ctx->assoc_short_addr);
-        }
         if (ctx && ctx->assoc_status == 0) {
+            if (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT) {
+                network_uint16_t coord_short = { .u8 = { ctx->src[0], ctx->src[1] } };
+                ieee802154_pib_value_t v = {
+                    .type = IEEE802154_PIB_TYPE_NUI16,
+                    .v.short_addr = coord_short,
+                };
+                ieee802154_mac_mlme_set_request(mac, IEEE802154_PIB_COORD_SHORT_ADDRESS, &v);
+            }
+            else if (ctx->src_mode == IEEE802154_ADDR_MODE_EXTENDED) {
+                ieee802154_ext_addr_t coord_ext;
+                memcpy(coord_ext.uint8, ctx->src, IEEE802154_LONG_ADDRESS_LEN);
+                ieee802154_pib_value_t v = {
+                    .type = IEEE802154_PIB_TYPE_EUI64,
+                    .v.ext_addr = coord_ext,
+                };
+                ieee802154_mac_mlme_set_request(mac, IEEE802154_PIB_COORD_EXTENDED_ADDRESS, &v);
+            }
             ieee802154_pib_value_t short_addr_value = {
                 .type = IEEE802154_PIB_TYPE_NUI16,
                 .v.short_addr = byteorder_htons(ctx->assoc_short_addr),
@@ -507,6 +544,10 @@ static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
             }
             (void)ieee802154_set_idle(&mac->submac);
             return IEEE802154_MAC_STATE_DEVICE;
+        }
+        if (ctx && mac->cbs.mlme_associate_confirm) {
+            mac->cbs.mlme_associate_confirm(mac->cbs.mac, ctx->assoc_status,
+                                            ctx->assoc_short_addr);
         }
         (void)ieee802154_set_idle(&mac->submac);
         return IEEE802154_MAC_STATE_IDLE;

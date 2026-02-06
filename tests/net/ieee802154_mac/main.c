@@ -17,6 +17,7 @@
 #define IEEE802154_MAC_TEST_BUF_SIZE (16U)
 #define IEEE802154_LONG_ADDRESS_LEN_STR_MAX \
         (sizeof("00:00:00:00:00:00:00:00"))
+#define IEEE802154_SCAN_PAYLOAD_PRINT_MAX (16U)
 
 //static void _ev_data_confirm_handler(event_t *event);                        /**< TX Done event handler */                        /**< RX Done event handler */
 static void _ev_radio_handler(event_t *event);                      /**< CRC Error event handler */
@@ -53,6 +54,8 @@ static size_t scan_results_used;
 static ieee802154_mlme_scan_req_t scan_req;
 static mutex_t assoc_lock;
 static uint16_t assoc_short_addr_next = 0x0100;
+static uint8_t beacon_payload[IEEE802154_FRAME_LEN_MAX];
+static size_t beacon_payload_len;
 static struct {
     bool pending;
     uint8_t addr[IEEE802154_LONG_ADDRESS_LEN];
@@ -69,24 +72,19 @@ static const uint8_t payload[] =
 static int start(int argc, char **argv);
 static int poll(int argc, char **argv);
 static int print_addr(int argc, char **argv);
-static int print_short(int argc, char **argv);
 static int scan(int argc, char **argv);
 static int txtsnd(int argc, char **argv);
-static int txtsnd_short(int argc, char **argv);
-static int alloc_cmd(int argc, char **argv);
 static int assoc_req_cmd(int argc, char **argv);
 static int assoc_rsp_cmd(int argc, char **argv);
 static int assoc_auto_cmd(int argc, char **argv);
 static const shell_command_t shell_commands[] = {
-    { "print_addr", "Print IEEE802.15.4 addresses", print_addr },
-    { "print_short", "Print IEEE802.15.4 short address", print_short },
-    { "txtsnd", "Send IEEE 802.15.4 packet", txtsnd },
-    { "txtsnd_short", "Send IEEE 802.15.4 packet to short addr", txtsnd_short },
-    { "poll", "Send IEEE 802.15.4 data request packet", poll },
-    { "scan", "Active scan: scan <duration_symbols> <ch1> [ch2 ...]", scan },
-    { "start", "Start as IEEE 802.15.4 coordinator (always RX)", start },
-    { "alloc", "Allocate/free RX buffer: alloc [free]", alloc_cmd },
-    { "assoc_req", "MLME-ASSOC.req: assoc_req <short|long> <addr> <panid>", assoc_req_cmd },
+    { "print_addr", "Print IEEE 802.15.4 short and extended address", print_addr },
+    { "txtsnd", "Send payload: txtsnd <addr> <len> <indirect (true/false)>", txtsnd },
+    { "poll", "MLME-POLL: poll <long_addr> (used if no coord short)", poll },
+    { "scan", "Active scan: scan <duration_us> <ch1> [ch2 ...]", scan },
+    { "start", "Start coordinator: start <channel> <panid> [ssid]", start },
+    { "assoc_req", "MLME-ASSOC.req: assoc_req <short|long> <addr> <panid> <channel>",
+      assoc_req_cmd },
     { "assoc_rsp", "MLME-ASSOC.resp: assoc_rsp <short|long> <addr> <status> <short_addr>",
       assoc_rsp_cmd },
     { "assoc_auto", "Auto-assoc response: assoc_auto [on|off]", assoc_auto_cmd },
@@ -123,7 +121,6 @@ static inline void _mac_buf_free(ieee802154_mac_t *mac, mac_buf_t *p)
     mutex_unlock(&buf_lock);
 }
 
-static iolist_t *_last_alloc;
 static const ieee802154_assoc_capability_t _assoc_cap_fixed = {
     .bits = {
         .device_type = 0,
@@ -175,7 +172,7 @@ static void my_ind(void *arg,
     const uint8_t *payload = psdu->iol_base + mhr_len;
     size_t plen = psdu->iol_len - mhr_len;
 
-    printf("RX payload (as string): ");
+    printf("RX payload string=");
     for (size_t i = 0; i < plen; i++) {
         unsigned char c = payload[i];
         putchar(isprint(c) ? (char)c : '.');
@@ -195,22 +192,35 @@ static void my_scan_confirm(void *arg, int status,
         char addr_str[IEEE802154_LONG_ADDRESS_LEN_STR_MAX];
         const ieee802154_scan_result_t *res = &req->results[i];
         if (res->coord_addr.type == IEEE802154_ADDR_MODE_EXTENDED) {
-            printf("[%u] ch=%u pan=0x%04x addr=%s lqi=%u rssi=%u\n",
+            printf("[%u] ch=%u pan=0x%04x addr=%s lqi=%u rssi=%u",
                    (unsigned)i, res->channel, res->pan_id,
                    l2util_addr_to_str(res->coord_addr.v.ext_addr.uint8,
                                       IEEE802154_LONG_ADDRESS_LEN, addr_str),
                    res->lqi, res->rssi);
         }
         else if (res->coord_addr.type == IEEE802154_ADDR_MODE_SHORT) {
-            printf("[%u] ch=%u pan=0x%04x addr=0x%04x lqi=%u rssi=%u\n",
+            printf("[%u] ch=%u pan=0x%04x addr=0x%04x lqi=%u rssi=%u",
                    (unsigned)i, res->channel, res->pan_id,
                    byteorder_ntohs(res->coord_addr.v.short_addr), res->lqi, res->rssi);
         }
         else {
-            printf("[%u] ch=%u pan=0x%04x addr=none lqi=%u rssi=%u\n",
+            printf("[%u] ch=%u pan=0x%04x addr=none lqi=%u rssi=%u",
                    (unsigned)i, res->channel, res->pan_id,
                    res->lqi, res->rssi);
         }
+        printf(" payload_len=%u payload=\"", res->beacon_payload_len);
+        size_t payload_print = res->beacon_payload_len;
+        if (payload_print > IEEE802154_SCAN_PAYLOAD_PRINT_MAX) {
+            payload_print = IEEE802154_SCAN_PAYLOAD_PRINT_MAX;
+        }
+        for (size_t j = 0; j < payload_print; j++) {
+            unsigned char c = res->beacon_payload[j];
+            putchar(isprint(c) ? (char)c : '.');
+        }
+        if (payload_print < res->beacon_payload_len) {
+            printf("..");
+        }
+        printf("\"\n");
     }
 }
 
@@ -240,6 +250,17 @@ static void my_associate_confirm(void *arg, int status, uint16_t short_addr)
 {
     (void)arg;
     printf("ASSOC confirm status=%d short_addr=0x%04x\n", status, short_addr);
+    if (status == 0) {
+        ieee802154_pib_value_t coord_short;
+        ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_COORD_SHORT_ADDRESS,
+                                        &coord_short);
+        if (coord_short.v.short_addr.u16 == 0xFFFFU) {
+            coord_short.type = IEEE802154_PIB_TYPE_NUI16;
+            coord_short.v.short_addr = byteorder_htons(0x0000);
+            ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_COORD_SHORT_ADDRESS,
+                                            &coord_short);
+        }
+    }
 }
 
 static void _ev_tick_handler(event_t *event)
@@ -382,9 +403,45 @@ static void _ev_assoc_indication_handler(event_t *event)
 
 static int start(int argc, char **argv)
 {
-    (void)argc;
-    (void)argv;
-    int res = ieee802154_mlme_start_request(&mac, CONFIG_IEEE802154_DEFAULT_CHANNEL);
+    if ((argc != 3) && (argc != 4)) {
+        puts("Usage: start <channel> <panid> [ssid]\n");
+        return 1;
+    }
+
+    uint16_t channel = (uint16_t)strtoul(argv[1], NULL, 0);
+    uint16_t panid = (uint16_t)strtoul(argv[2], NULL, 0);
+
+    ieee802154_pib_value_t pib_value;
+    pib_value.type = IEEE802154_PIB_TYPE_U16;
+    pib_value.v.u16 = panid;
+    ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_PAN_ID, &pib_value);
+
+    pib_value.type = IEEE802154_PIB_TYPE_NUI16;
+    pib_value.v.short_addr = byteorder_htons(0x0000);
+    ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_SHORT_ADDR, &pib_value);
+
+    if (argc == 4) {
+        size_t ssid_len = strlen(argv[3]);
+        if (ssid_len > sizeof(beacon_payload)) {
+            puts("Error: ssid too long\n");
+            return 1;
+        }
+        memcpy(beacon_payload, argv[3], ssid_len);
+        beacon_payload_len = ssid_len;
+        pib_value.type = IEEE802154_PIB_TYPE_BYTES;
+        pib_value.v.bytes.ptr = beacon_payload;
+        pib_value.v.bytes.len = beacon_payload_len;
+        ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_BEACON_PAYLOAD, &pib_value);
+    }
+    else {
+        beacon_payload_len = 0;
+        pib_value.type = IEEE802154_PIB_TYPE_BYTES;
+        pib_value.v.bytes.ptr = NULL;
+        pib_value.v.bytes.len = 0;
+        ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_BEACON_PAYLOAD, &pib_value);
+    }
+
+    int res = ieee802154_mlme_start_request(&mac, channel);
     if (res < 0) {
         puts("Error starting coordinator\n");
     }
@@ -394,19 +451,33 @@ static int start(int argc, char **argv)
 
 static int poll(int argc, char **argv)
 {
-    (void)argc;
-    (void)argv;
     uint8_t addr[IEEE802154_LONG_ADDRESS_LEN];
     int res;
+    ieee802154_pib_value_t panid;
+    ieee802154_pib_value_t coord_short;
+    ieee802154_addr_mode_t coord_mode = IEEE802154_ADDR_MODE_EXTENDED;
+    const void *coord_addr = addr;
 
-    res = l2util_addr_from_str(argv[1], addr);
-    if (res == 0) {
+    if (argc != 2) {
         puts("Usage: poll <long_addr>\n");
         return 1;
     }
 
-    ieee802154_mac_mlme_poll(&mac, IEEE802154_ADDR_MODE_EXTENDED, CONFIG_IEEE802154_DEFAULT_PANID,
-                             addr);
+    ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_PAN_ID, &panid);
+    ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_COORD_SHORT_ADDRESS, &coord_short);
+    if (coord_short.v.short_addr.u16 != 0xFFFFU) {
+        coord_mode = IEEE802154_ADDR_MODE_SHORT;
+        coord_addr = &coord_short.v.short_addr;
+    }
+    else {
+        res = l2util_addr_from_str(argv[1], addr);
+        if (res == 0) {
+            puts("Usage: poll <long_addr>\n");
+            return 1;
+        }
+    }
+
+    ieee802154_mac_mlme_poll(&mac, coord_mode, panid.v.u16, coord_addr);
     return 0;
 }
 
@@ -414,21 +485,16 @@ static int print_addr(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    char addr_str[IEEE802154_LONG_ADDRESS_LEN_STR_MAX];
-    ieee802154_pib_value_t long_addr;
-    ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_EXTENDED_ADDRESS, &long_addr);
-    printf("%s\n", l2util_addr_to_str(
-               long_addr.v.ext_addr.uint8, IEEE802154_LONG_ADDRESS_LEN, addr_str));
-    return 0;
-}
-
-static int print_short(int argc, char **argv)
-{
-    (void)argc;
-    (void)argv;
+    char long_addr_str[IEEE802154_LONG_ADDRESS_LEN_STR_MAX];
+    char short_addr_str[IEEE802154_SHORT_ADDRESS_LEN * 3];
     ieee802154_pib_value_t short_addr;
+    ieee802154_pib_value_t long_addr;
     ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_SHORT_ADDR, &short_addr);
-    printf("0x%04x\n", byteorder_ntohs(short_addr.v.short_addr));
+    ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_EXTENDED_ADDRESS, &long_addr);
+    printf("short %s\n", l2util_addr_to_str(
+               short_addr.v.short_addr.u8, IEEE802154_SHORT_ADDRESS_LEN, short_addr_str));
+    printf("extended %s\n", l2util_addr_to_str(
+               long_addr.v.ext_addr.uint8, IEEE802154_LONG_ADDRESS_LEN, long_addr_str));
     return 0;
 }
 
@@ -467,48 +533,28 @@ static int scan(int argc, char **argv)
     return 0;
 }
 
-static int alloc_cmd(int argc, char **argv)
-{
-    if (argc > 1 && strcmp(argv[1], "free") == 0) {
-        if (!_last_alloc) {
-            puts("no buffer allocated\n");
-            return 1;
-        }
-        mac_buf_t *buf = container_of(_last_alloc, mac_buf_t, iolist);
-        _mac_buf_free(&mac, buf);
-        _last_alloc = NULL;
-        puts("buffer freed\n");
-        return 0;
-    }
-
-    iolist_t *buf = _mac_buf_alloc();
-    if (!buf) {
-        puts("no RX buffer available\n");
-        return 1;
-    }
-    _last_alloc = buf;
-    mac_buf_t *p = container_of(buf, mac_buf_t, iolist);
-    printf("buffer allocated (slot=%u)\n",
-           (unsigned)(p - buf_pool));
-    return 0;
-}
-
 static int assoc_req_cmd(int argc, char **argv)
 {
-    if (argc != 4) {
-        puts("Usage: assoc_req <short|long> <addr> <panid>\n");
+    if (argc != 5) {
+        puts("Usage: assoc_req <short|long> <addr> <panid> <channel>\n");
         return 1;
     }
 
     ieee802154_addr_mode_t mode;
     uint16_t panid = (uint16_t)strtoul(argv[3], NULL, 0);
+    uint16_t channel = (uint16_t)strtoul(argv[4], NULL, 0);
 
     if (strcmp(argv[1], "short") == 0) {
         mode = IEEE802154_ADDR_MODE_SHORT;
         uint16_t short_addr_host = (uint16_t)strtoul(argv[2], NULL, 0);
         network_uint16_t short_addr = byteorder_htons(short_addr_host);
         ieee802154_addr_t addr = { .type = mode, .v.short_addr = short_addr };
-        return ieee802154_mac_mlme_associate_request(&mac, &addr, panid,
+        ieee802154_pib_value_t pib_short = {
+            .type = IEEE802154_PIB_TYPE_NUI16,
+            .v.short_addr = short_addr
+        };
+        ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_COORD_SHORT_ADDRESS, &pib_short);
+        return ieee802154_mac_mlme_associate_request(&mac, &addr, channel, panid,
                                                      _assoc_cap_fixed);
     }
     else if (strcmp(argv[1], "long") == 0) {
@@ -519,11 +565,16 @@ static int assoc_req_cmd(int argc, char **argv)
             return 1;
         }
         ieee802154_addr_t addr = { .type = mode, .v.ext_addr = ext };
-        return ieee802154_mac_mlme_associate_request(&mac, &addr, panid,
+        ieee802154_pib_value_t pib_ext = {
+            .type = IEEE802154_PIB_TYPE_EUI64,
+            .v.ext_addr = ext
+        };
+        ieee802154_mac_mlme_set_request(&mac, IEEE802154_PIB_COORD_EXTENDED_ADDRESS, &pib_ext);
+        return ieee802154_mac_mlme_associate_request(&mac, &addr, channel, panid,
                                                      _assoc_cap_fixed);
     }
 
-    puts("Usage: assoc_req <short|long> <addr> <panid>\n");
+    puts("Usage: assoc_req <short|long> <addr> <panid> <channel>\n");
     return 1;
 }
 
@@ -598,10 +649,12 @@ static int send(uint8_t *dst,
     msdu->iol_next = NULL;
     mac_buf_t *msdu_buf = container_of(msdu, mac_buf_t, iolist);
     uint8_t handle = (uint8_t)(msdu_buf - buf_pool);
+    ieee802154_pib_value_t panid;
+    ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_PAN_ID, &panid);
     int res = ieee802154_mcps_data_request(&mac,
                                            IEEE802154_ADDR_MODE_EXTENDED,
                                            IEEE802154_ADDR_MODE_EXTENDED,
-                                           CONFIG_IEEE802154_DEFAULT_PANID,
+                                           panid.v.u16,
                                            dst,
                                            msdu,
                                            handle,
@@ -629,10 +682,12 @@ static int send_short(network_uint16_t dst_short,
     msdu->iol_next = NULL;
     mac_buf_t *msdu_buf = container_of(msdu, mac_buf_t, iolist);
     uint8_t handle = (uint8_t)(msdu_buf - buf_pool);
+    ieee802154_pib_value_t panid;
+    ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_PAN_ID, &panid);
     int res = ieee802154_mcps_data_request(&mac,
                                            IEEE802154_ADDR_MODE_SHORT,
                                            IEEE802154_ADDR_MODE_SHORT,
-                                           CONFIG_IEEE802154_DEFAULT_PANID,
+                                           panid.v.u16,
                                            &dst_short,
                                            msdu,
                                            handle,
@@ -649,18 +704,22 @@ static int send_short(network_uint16_t dst_short,
 
 static int txtsnd(int argc, char **argv)
 {
-    uint8_t addr[IEEE802154_LONG_ADDRESS_LEN];
+    uint8_t long_addr[IEEE802154_LONG_ADDRESS_LEN];
+    uint16_t short_addr_host;
+    network_uint16_t short_addr;
     size_t len;
     size_t res;
     bool indirect = false;
 
     if (argc != 4) {
-        puts("Usage: txtsnd <long_addr> <len> <indirect (true/false)>\n>");
+        puts("Usage: txtsnd <addr> <len> <indirect (true/false)>\n"
+             "  addr: short xx:yy or 0xNNNN / decimal, long xx:.. (8 bytes)\n>");
         return 1;
     }
 
     if (!((strcmp(argv[3], "true") == 0 ) || (strcmp(argv[3], "false") == 0)) ) {
-        puts("Usage: txtsnd <long_addr> <len> <indirect (true/false)\n");
+        puts("Usage: txtsnd <addr> <len> <indirect (true/false)>\n"
+             "  addr: short xx:yy or 0xNNNN / decimal, long xx:.. (8 bytes)\n");
         return 1;
     }
 
@@ -668,42 +727,34 @@ static int txtsnd(int argc, char **argv)
         indirect = true;
     }
 
-    res = l2util_addr_from_str(argv[1], addr);
-    if (res == 0) {
-        puts("Usage: txtsnd <long_addr> <len> <indirect (true/false)\n");
-        return 1;
-    }
-    len = atoi(argv[2]);
-
-    return send(addr, (void * )payload, len, indirect);
-}
-
-static int txtsnd_short(int argc, char **argv)
-{
-    uint16_t addr_host;
-    network_uint16_t addr;
-    size_t len;
-    bool indirect = false;
-
-    if (argc != 4) {
-        puts("Usage: txtsnd_short <short_addr> <len> <indirect (true/false)>\n>");
-        return 1;
-    }
-
-    if (!((strcmp(argv[3], "true") == 0 ) || (strcmp(argv[3], "false") == 0)) ) {
-        puts("Usage: txtsnd_short <short_addr> <len> <indirect (true/false)>\n");
-        return 1;
-    }
-
-    if ((strcmp(argv[3], "true")) == 0) {
-        indirect = true;
-    }
-
-    addr_host = (uint16_t)strtoul(argv[1], NULL, 0);
-    addr = byteorder_htons(addr_host);
     len = (size_t)atoi(argv[2]);
 
-    return send_short(addr, (void * )payload, len, indirect);
+    if (strchr(argv[1], ':') != NULL) {
+        res = l2util_addr_from_str(argv[1], long_addr);
+        if (res == IEEE802154_LONG_ADDRESS_LEN) {
+            return send(long_addr, (void *)payload, len, indirect);
+        }
+        if (res == IEEE802154_SHORT_ADDRESS_LEN) {
+            short_addr.u8[0] = long_addr[0];
+            short_addr.u8[1] = long_addr[1];
+            return send_short(short_addr, (void *)payload, len, indirect);
+        }
+        puts("Usage: txtsnd <addr> <len> <indirect (true/false)>\n"
+             "  addr: short xx:yy or 0xNNNN / decimal, long xx:.. (8 bytes)\n");
+        return 1;
+    }
+
+    char *endptr = NULL;
+    unsigned long parsed = strtoul(argv[1], &endptr, 0);
+    if ((endptr == argv[1]) || (*endptr != '\0') || (parsed > 0xFFFFU)) {
+        puts("Usage: txtsnd <addr> <len> <indirect (true/false)>\n"
+             "  addr: short xx:yy or 0xNNNN / decimal, long xx:.. (8 bytes)\n");
+        return 1;
+    }
+
+    short_addr_host = (uint16_t)parsed;
+    short_addr = byteorder_htons(short_addr_host);
+    return send_short(short_addr, (void *)payload, len, indirect);
 }
 
 static int _init(void)

@@ -234,10 +234,6 @@ int ieee802154_mac_fsm_process_ev_ctx(ieee802154_mac_t *mac, ieee802154_mac_fsm_
 int ieee802154_mac_fsm_request(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev,
                                const ieee802154_mac_fsm_ctx_t *ctx);
 
-const ieee802154_ext_addr_t *ieee802154_mac_addr_map_lookup(const ieee802154_mac_t *mac,
-                                                            network_uint16_t short_addr);
-void ieee802154_mac_addr_map_add(ieee802154_mac_t *mac, network_uint16_t short_addr,
-                                 const ieee802154_ext_addr_t *ext_addr);
 
 #ifdef __cplusplus
 }

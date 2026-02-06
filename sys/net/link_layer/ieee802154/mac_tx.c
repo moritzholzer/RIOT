@@ -38,7 +38,6 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     if ((d->type == IEEE802154_FCF_TYPE_DATA) && mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
     }
-    /* TODO: implement timer for not receiving frame after frame pending to go back to radio off */
     if (!mac->is_coordinator && (status == TX_STATUS_FRAME_PENDING) &&
         !mac->scan_active) {
         mac->poll_rx_active = true;
@@ -46,7 +45,6 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
     }
     if (mac->is_coordinator || (status == TX_STATUS_FRAME_PENDING) || mac->scan_active ||
         mac->assoc_pending) {
-        DEBUG("TX_STATUS_FRAME_PENDING\n");
         mac->cbs.rx_request(mac);
     }
     d->in_use = false;
@@ -62,8 +60,8 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
     if (mac->assoc_pending &&
         ieee802154_mac_frame_is_expired(mac->indirect_q.tick, mac->assoc_deadline_tick)) {
         mac->assoc_pending = false;
-        (void)ieee802154_mac_fsm_process_ev_ctx(mac, IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT, NULL);
-        (void)ieee802154_set_idle(&mac->submac);
+        //(void)ieee802154_mac_fsm_process_ev_ctx(mac, IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT, NULL);
+        //(void)ieee802154_set_idle(&mac->submac);
     }
     if (mac->poll_rx_active &&
         ieee802154_mac_frame_is_expired(mac->indirect_q.tick, mac->poll_rx_deadline) &&

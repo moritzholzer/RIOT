@@ -159,7 +159,6 @@ static bool _mac_rx_prepare_ctx(ieee802154_mac_t *mac, iolist_t *buf, int len,
                                 ieee802154_mac_fsm_ev_t *ev,
                                 uint8_t *frame_type, bool *do_fsm)
 {
-    eui64_t src_addr;
     uint8_t src[IEEE802154_LONG_ADDRESS_LEN];//, dst[IEEE802154_LONG_ADDRESS_LEN];
     int mhr_len, src_len;
     le_uint16_t src_pan;
@@ -178,7 +177,7 @@ static bool _mac_rx_prepare_ctx(ieee802154_mac_t *mac, iolist_t *buf, int len,
 
     //dst_len = ieee802154_get_dst(buf->iol_base, dst, &dst_pan);
     src_len = ieee802154_get_src(buf->iol_base, src, &src_pan);
-    if (src_len < 0 || (size_t)src_len > sizeof(src_addr)) {
+    if (src_len < 0 || (size_t)src_len > sizeof(src)) {
         return false;
     }
 
@@ -188,11 +187,9 @@ static bool _mac_rx_prepare_ctx(ieee802154_mac_t *mac, iolist_t *buf, int len,
         mac->poll_rx_active = false;
     }
 
-    memcpy(&src_addr, src, src_len);
     memset(ctx, 0, sizeof(*ctx));
     ctx->buf = buf;
     ctx->info = info;
-    ctx->src_addr = src_addr;
     ctx->src_pan = src_pan;
     ctx->src_len = src_len;
     ctx->frame_type = *frame_type;

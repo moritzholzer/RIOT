@@ -275,8 +275,6 @@ void ieee802154_init_mac_internal(ieee802154_mac_t *mac)
     mac->scan_timer_pending = false;
     mac->assoc_pending = false;
     mac->assoc_deadline_tick = 0;
-    memset(mac->addr_map, 0, sizeof(mac->addr_map));
-    memset(mac->addr_map_ext, 0, sizeof(mac->addr_map_ext));
     mac->tick.callback = mac->cbs.tick_request;
     mac->tick.arg = mac;
     mac->ack_timer.callback = _ack_timer_cb;

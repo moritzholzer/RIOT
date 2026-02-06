@@ -136,6 +136,7 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
 
 int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
                                           const ieee802154_addr_t *coord_addr,
+                                          uint16_t channel_num,
                                           uint16_t coord_panid,
                                           ieee802154_assoc_capability_t capability)
 {
@@ -143,9 +144,14 @@ int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
         return -EINVAL;
     }
 
-    int res = -EINVAL;
+    int res = ieee802154_set_channel_number(&mac->submac, channel_num);
+    if (res < 0) {
+        return res;
+    }
+    res = -EINVAL;
     ieee802154_mac_fsm_ctx_t ctx;
     const void *addr = NULL;
+    ieee802154_pib_value_t panid;
 
     if (coord_addr->type == IEEE802154_ADDR_MODE_SHORT) {
         addr = &coord_addr->v.short_addr;
@@ -156,6 +162,10 @@ int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
     else {
         return -EINVAL;
     }
+
+    panid.type = IEEE802154_PIB_TYPE_U16;
+    panid.v.u16 = coord_panid;
+    ieee802154_mac_mlme_set_request(mac, IEEE802154_PIB_PAN_ID, &panid);
 
     memset(&ctx, 0, sizeof(ctx));
     ctx.dst_addr = addr;

@@ -39,6 +39,10 @@ extern "C" {
 #  endif
 #endif
 
+#ifndef IEEE802154_SCAN_BEACON_PAYLOAD_MAX
+#define IEEE802154_SCAN_BEACON_PAYLOAD_MAX  (IEEE802154_FRAME_LEN_MAX)
+#endif
+
 #ifndef IEEE802154_MAC_TXQ_LEN
 #define IEEE802154_MAC_TXQ_LEN   (4U)
 #endif
@@ -269,6 +273,8 @@ typedef struct {
     ieee802154_addr_t coord_addr;
     uint8_t lqi;
     uint8_t rssi;
+    uint8_t beacon_payload_len;
+    uint8_t beacon_payload[IEEE802154_SCAN_BEACON_PAYLOAD_MAX];
 } ieee802154_scan_result_t;
 
 /**
@@ -299,14 +305,6 @@ typedef union {
         uint8_t allocate_address : 1;
     } bits;
 } ieee802154_assoc_capability_t;
-
-/**
- * @brief Pack association capability information into a byte.
- */
-static inline uint8_t ieee802154_assoc_capability_pack(ieee802154_assoc_capability_t cap)
-{
-    return cap.u8;
-}
 
 /**
  * @brief IEEE 802.15.4 association status.
@@ -492,15 +490,6 @@ typedef struct {
 } ieee802154_mac_indirect_q_t;
 
 /**
- * @brief IEEE 802.15.4 MAC short-to-extended address map entry.
- */
-typedef struct {
-    bool in_use;
-    network_uint16_t short_addr;
-    const ieee802154_ext_addr_t *ext_addr;
-} ieee802154_mac_addr_map_t;
-
-/**
  * @brief IEEE 802.15.4 MAC descriptor
  */
 typedef struct {
@@ -518,8 +507,6 @@ typedef struct {
     uint8_t cmd_buf[IEEE802154_FRAME_LEN_MAX];                  /**< receiving buf */
     iolist_t cmd;
     ieee802154_mac_indirect_q_t indirect_q;
-    ieee802154_mac_addr_map_t addr_map[IEEE802154_MAC_TX_INDIRECTQ_SIZE];
-    ieee802154_ext_addr_t addr_map_ext[IEEE802154_MAC_TX_INDIRECTQ_SIZE];
     uint16_t sym_us;
     ieee802154_mlme_scan_req_t *scan_req;
     bool scan_active;
@@ -617,6 +604,7 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
  */
 int ieee802154_mac_mlme_associate_request(ieee802154_mac_t *mac,
                                           const ieee802154_addr_t *coord_addr,
+                                          uint16_t channel_num,
                                           uint16_t coord_panid,
                                           ieee802154_assoc_capability_t capability);
 /**
