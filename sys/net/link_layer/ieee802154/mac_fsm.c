@@ -146,8 +146,8 @@ static int _mac_assoc_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ct
     ieee802154_pib_value_t wait;
     ieee802154_mac_mlme_get(mac, IEEE802154_PIB_RESPONSE_WAIT_TIME, &wait);
     uint32_t duration_us = (uint32_t)wait.v.u8 * 60U * mac->sym_us;
-    uint16_t ticks = (uint16_t)((duration_us + IEEE802154_MAC_TICK_INTERVAL_US - 1U) /
-                                IEEE802154_MAC_TICK_INTERVAL_US);
+    uint16_t ticks = (uint16_t)((duration_us + (IEEE802154_MAC_TICK_INTERVAL_MS * 1000U) - 1U) /
+                                (IEEE802154_MAC_TICK_INTERVAL_MS * 1000U));
     if (ticks == 0) {
         ticks = 1;
     }

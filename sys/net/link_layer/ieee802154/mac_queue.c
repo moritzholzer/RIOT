@@ -123,7 +123,8 @@ uint16_t ieee802154_indirect_get_deadline(ieee802154_mac_t *mac)
     uint16_t unit_period_us = IEEE802154_MAC_FRAME_TIMEOUT * mac->sym_us;
     /* round up to handle too early timeouts */
     uint16_t unit_period_ticks =
-        (unit_period_us + IEEE802154_MAC_TICK_INTERVAL_US - 1U) / IEEE802154_MAC_TICK_INTERVAL_US;
+        (unit_period_us + (IEEE802154_MAC_TICK_INTERVAL_MS * 1000U) - 1U) /
+        (IEEE802154_MAC_TICK_INTERVAL_MS * 1000U);
     return (mac->indirect_q.tick + (unit_period_ticks * IEEE802154_MAC_FRAME_TIMEOUT));
 }
 
