@@ -9,7 +9,7 @@
 
 #include "mac_internal_priv.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static void _process_event(ieee802154_mac_t *mac, uint8_t ev);
@@ -84,11 +84,4 @@ void ieee802154_submac_bh_request(ieee802154_submac_t *submac)
     mac->cbs.bh_request(mac);
 }
 
-void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac)
-{
-    if (!mac) {
-        return;
-    }
 
-    (void)ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_SCAN_TIMER, NULL);
-}

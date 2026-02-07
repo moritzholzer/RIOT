@@ -8,7 +8,7 @@
 #include "mac_internal_priv.h"
 #include "mac_pib.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static uint8_t ieee80214_addr_len_from_mode(ieee802154_addr_mode_t mode);

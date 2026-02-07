@@ -132,8 +132,10 @@ static const ieee802154_assoc_capability_t _assoc_cap_fixed = {
 static bool assoc_auto = true;
 
 
-iolist_t * _allocate(void)
+iolist_t * _allocate(void *mac, size_t len)
 {
+    (void)mac;
+    (void)len;
     return _mac_buf_alloc();
 }
 
@@ -337,7 +339,7 @@ static void _ev_ack_timeout_handler(event_t *event)
 static void _ev_alloc_handler(event_t *event)
 {
     (void)event;
-    iolist_t *buf = _allocate();
+    iolist_t *buf = _allocate(NULL, 0);
     if (!buf) {
         puts("no RX buffer available\n");
         return;
@@ -639,7 +641,7 @@ static int assoc_auto_cmd(int argc, char **argv)
 static int send(uint8_t *dst,
                 void *data, size_t len, bool indirect)
 {
-    iolist_t *msdu = _allocate();
+    iolist_t *msdu = _allocate(NULL, 0);
     if (!msdu) {
         puts("no TX buffer available\n");
         return -ENOBUFS;
@@ -672,7 +674,7 @@ static int send(uint8_t *dst,
 static int send_short(network_uint16_t dst_short,
                       void *data, size_t len, bool indirect)
 {
-    iolist_t *msdu = _allocate();
+    iolist_t *msdu = _allocate(NULL, 0);
     if (!msdu) {
         puts("no TX buffer available\n");
         return -ENOBUFS;

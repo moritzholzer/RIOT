@@ -11,9 +11,10 @@
 #include "mac_internal_priv.h"
 #include "mac_pib.h"
 #include "net/ieee802154/mac.h"
+#include "net/ieee802154/submac.h"
 #include "net/eui_provider.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mode,
@@ -260,9 +261,7 @@ static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
             const void *src_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
                                     ? (const void *)ctx->src
                                     : (const void *)&ctx->src_addr;
-            if (_mac_tx_request(mac, ctx->src_mode, src_addr) > 0) {
-                mac->cbs.dealloc_request(mac, ctx->buf);
-            }
+            (void)_mac_tx_request(mac, ctx->src_mode, src_addr);
         }
         return IEEE802154_MAC_STATE_IDLE;
     case IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ:
@@ -385,9 +384,7 @@ static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
             const void *src_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
                                     ? (const void *)ctx->src
                                     : (const void *)&ctx->src_addr;
-            if (_mac_tx_request(mac, ctx->src_mode, src_addr) > 0) {
-                mac->cbs.dealloc_request(mac, ctx->buf);
-            }
+            (void)_mac_tx_request(mac, ctx->src_mode, src_addr);
         }
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     default:
@@ -423,10 +420,7 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
                                     ? (const void *)ctx->src
                                     : (const void *)&ctx->src_addr;
             int res = _mac_tx_request(mac, ctx->src_mode, src_addr);
-            if (res > 0) {
-                mac->cbs.dealloc_request(mac, ctx->buf);
-            }else if (res < 0)
-            {
+            if (res < 0) {
                 DEBUG("IEEE802154 MAC: failed to send data in response to data request status=%d\n", res);
             }
 
@@ -699,6 +693,14 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
             mac->coord_softmode = false;
         }
         mac->is_coordinator = true;
+    }
+
+    if ((mac->submac.fsm_state == IEEE802154_FSM_STATE_IDLE) && mac->cbs.rx_request) {
+    ieee802154_pib_value_t rx_on = { 0 };
+    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_RX_ON_WHEN_IDLE, &rx_on);
+    if (rx_on.v.b) {
+            mac->cbs.rx_request(mac);
+        }
     }
 
     return 0;

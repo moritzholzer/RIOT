@@ -18,9 +18,10 @@
 #include "mutex.h"
 
 #include "mac_internal_priv.h"
+#include "net/ieee802154/submac.h"
 #include "mac_pib.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 #include "event/thread.h"
@@ -204,7 +205,11 @@ static void _submac_rx_done(ieee802154_submac_t *submac)
 {
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
 
-    mac->cbs.allocate_request(mac);
+    int len = ieee802154_get_frame_length(submac);
+    if (len <= 0) {
+        return;
+    }
+    mac->cbs.allocate_request(mac, (size_t)len);
 }
 
 static void _submac_tx_done(ieee802154_submac_t *submac, int status, ieee802154_tx_info_t *info)

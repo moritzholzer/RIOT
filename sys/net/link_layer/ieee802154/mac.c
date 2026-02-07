@@ -21,7 +21,7 @@
 #include "mac_internal_priv.h"
 #include "mac_pib.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 
@@ -58,6 +58,15 @@ void ieee802154_mac_init(ieee802154_mac_t *mac,
     mac->cbs.mac = mac;
     ieee802154_mac_pib_init(mac);
     ieee802154_init_mac_internal(mac);
+}
+
+void ieee802154_mac_scan_timer_process(ieee802154_mac_t *mac)
+{
+    if (!mac) {
+        return;
+    }
+
+    (void)ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_SCAN_TIMER, NULL);
 }
 
 int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type_t type,
