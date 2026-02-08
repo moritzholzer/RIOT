@@ -52,7 +52,15 @@ void ieee802154_mac_mlme_get_request(ieee802154_mac_t *mac,
 void ieee802154_mac_init(ieee802154_mac_t *mac,
                          const ieee802154_mac_cbs_t *cbs)
 {
-    puts("init\n");
+    ieee802154_mac_init_with_devtype(mac, cbs, IEEE802154_DEV_TYPE_KW2XRF);
+}
+
+void ieee802154_mac_init_with_devtype(ieee802154_mac_t *mac,
+                                      const ieee802154_mac_cbs_t *cbs,
+                                      ieee802154_dev_type_t dev_type)
+{
+    /* Preserve radio HAL descriptor initialized by radio init callback */
+    ieee802154_dev_t hal_dev = mac->submac.dev;
     memset(mac, 0, sizeof(*mac));
     mac->cbs = *cbs;
     mac->cbs.mac = mac;

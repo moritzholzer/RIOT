@@ -14,6 +14,7 @@ USEMODULE += ieee802154
 USEMODULE += ieee802154_mac
 USEMODULE += ieee802154_submac
 USEMODULE += ztimer_usec
+USEMODULE += ztimer_msec
 
 ifneq (,$(filter native native32 native64,$(BOARD)))
   USE_ZEP = 1

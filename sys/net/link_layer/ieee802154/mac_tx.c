@@ -59,7 +59,7 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
     bool need_tick = mac->assoc_pending ||
                      mac->poll_rx_active ||
                      mac->scan_active ||
-                     !ieee802154_mac_indirectq_empty(&mac->indirect_q);
+                     !ieee802154_indirectq_empty(&mac->indirect_q);
     if (!need_tick) {
         ztimer_remove(ZTIMER_MSEC, &mac->tick);
         mutex_unlock(&mac->submac_lock);

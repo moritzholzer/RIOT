@@ -14,6 +14,7 @@
 #include "net/l2util.h"
 #include "shell.h"
 
+#include "init_devs.h"
 #define IEEE802154_MAC_TEST_BUF_SIZE (16U)
 #define IEEE802154_LONG_ADDRESS_LEN_STR_MAX \
         (sizeof("00:00:00:00:00:00:00:00"))
@@ -271,9 +272,10 @@ static void _ev_tick_handler(event_t *event)
     ieee802154_mac_tick(&mac);
 }
 
-static void my_alloc(void *mac)
+static void my_alloc(void *mac, size_t len)
 {
     (void)mac;
+    (void)len;
     event_post(EVENT_PRIO_HIGHEST, &ev_alloc);
 }
 
@@ -779,7 +781,11 @@ static int _init(void)
         .dealloc_request = my_dealloc,
         .rx_request = my_rx
     };
-    ieee802154_mac_init(&mac, &cbs);
+    ieee802154_dev_type_t dev_type = IEEE802154_MAC_TEST_DEV_TYPE;
+    if (ieee802154_mac_test_init_devs(&mac.submac.dev, &dev_type) < 0) {
+        return -ENODEV;
+    }
+    ieee802154_mac_init_with_devtype(&mac, &cbs, dev_type);
 
     ieee802154_pib_value_t pib_value;
     eui64_t long_addr;

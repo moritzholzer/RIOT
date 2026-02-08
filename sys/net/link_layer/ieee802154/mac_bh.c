@@ -84,4 +84,3 @@ void ieee802154_submac_bh_request(ieee802154_submac_t *submac)
     mac->cbs.bh_request(mac);
 }
 
-
