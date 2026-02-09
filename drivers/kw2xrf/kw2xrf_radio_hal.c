@@ -261,6 +261,8 @@ void kw2xrf_radio_hal_irq_handler(void *arg)
 
                 kw_dev->ack_rcvd = !(dregs[MKW2XDM_IRQSTS3] &
                                      MKW2XDM_IRQSTS3_TMR3IRQ);
+                kw_dev->ack_frame_pending = (dregs[MKW2XDM_IRQSTS1] &
+                                             MKW2XDM_IRQSTS1_RX_FRM_PEND);
 
                 /* Disallow TMR3IRQ to cancel RX operation */
                 kw2xrf_timer3_seq_abort_off(kw_dev);
@@ -383,6 +385,7 @@ static int _request_op(ieee802154_dev_t *dev, ieee802154_hal_op_t op, void *ctx)
     switch (op) {
     case IEEE802154_HAL_OP_TRANSMIT:
         kw_dev->tx_done = false;
+        kw_dev->ack_frame_pending = false;
         if (kw_dev->cca_before_tx) {
             kw_dev->tx_cca_pending = true;
             _set_sequence(kw_dev, XCVSEQ_CCA);
@@ -448,7 +451,12 @@ static int _confirm_op(ieee802154_dev_t *dev, ieee802154_hal_op_t op, void *ctx)
                 info->status = TX_STATUS_MEDIUM_BUSY;
             }
             else if (kw_dev->ack_rcvd || !kw_dev->ack_requested) {
-                info->status = TX_STATUS_SUCCESS;
+                if (kw_dev->ack_rcvd && kw_dev->ack_frame_pending) {
+                    info->status = TX_STATUS_FRAME_PENDING;
+                }
+                else {
+                    info->status = TX_STATUS_SUCCESS;
+                }
             } else {
                 info->status = TX_STATUS_NO_ACK;
             }
@@ -575,13 +583,24 @@ static int _config_addr_filter(ieee802154_dev_t *dev, ieee802154_af_cmd_t cmd, c
             kw2xrf_set_addr_short(kw_dev, byteorder_ntohs(*short_addr));
             break;
         case IEEE802154_AF_EXT_ADDR:
-            kw2xrf_set_addr_long(kw_dev, ext_addr->uint64.u64);
+            kw2xrf_set_addr_long(kw_dev, byteorder_ntohll(ext_addr->uint64));
             break;
         case IEEE802154_AF_PANID:
             kw2xrf_set_pan(kw_dev, *pan_id);
             break;
         case IEEE802154_AF_PAN_COORD:
-            return -ENOTSUP;
+        {
+            const bool *coord = value;
+            if (coord && *coord) {
+                kw2xrf_set_dreg_bit(kw_dev, MKW2XDM_PHY_CTRL4,
+                                    MKW2XDM_PHY_CTRL4_PANCORDNTR0);
+            }
+            else {
+                kw2xrf_clear_dreg_bit(kw_dev, MKW2XDM_PHY_CTRL4,
+                                      MKW2XDM_PHY_CTRL4_PANCORDNTR0);
+            }
+            break;
+        }
     }
 
     return 0;

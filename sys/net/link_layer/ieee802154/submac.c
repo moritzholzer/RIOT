@@ -186,7 +186,8 @@ static ieee802154_fsm_state_t _fsm_state_rx(ieee802154_submac_t *submac, ieee802
     case IEEE802154_FSM_EV_RX_DONE:
         /* Make sure it's not an ACK frame */
         while (ieee802154_radio_set_idle(&submac->dev, false) < 0) {}
-        if (ieee802154_radio_len(&submac->dev) > (int)IEEE802154_MIN_FRAME_LEN) {
+        int rx_len = ieee802154_radio_len(&submac->dev);
+        if (rx_len > (int)IEEE802154_MIN_FRAME_LEN) {
             submac->cb->rx_done(submac);
             return IEEE802154_FSM_STATE_IDLE;
         }
@@ -455,7 +456,6 @@ ieee802154_fsm_state_t ieee802154_submac_process_ev(ieee802154_submac_t *submac,
         DEBUG("IEEE802154 submac: ieee802154_submac_process_ev(): INVALID STATE\n");
         new_state = IEEE802154_FSM_STATE_INVALID;
     }
-
     if (new_state == IEEE802154_FSM_STATE_INVALID) {
         _print_debug(submac->fsm_state, new_state, ev);
         new_state = submac->fsm_state;
