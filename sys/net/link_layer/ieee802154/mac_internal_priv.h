@@ -19,6 +19,7 @@ extern "C" {
 #include "mutex.h"
 
 #include "net/ieee802154/mac.h"
+#include "ztimer.h"
 
 /**
  * @brief IEEE 802.15.4 MAC thread event type.
@@ -141,6 +142,17 @@ ieee802154_mac_tx_desc_t *ieee802154_mac_tx_peek(ieee802154_mac_txq_t *txq);
  * @brief Removes TX queue head entry.
  */
 void ieee802154_mac_tx_pop(ieee802154_mac_txq_t *txq);
+
+/**
+ * @brief Arm the MAC tick timer.
+ */
+static inline void ieee802154_mac_tick_arm(ieee802154_mac_t *mac)
+{
+    if (!ztimer_is_set(ZTIMER_MSEC, &mac->tick)) {
+        ztimer_set(ZTIMER_MSEC, &mac->tick,
+                   (uint32_t)IEEE802154_MAC_TICK_INTERVAL_MS);
+    }
+}
 
 /**
  * @brief Allocate a slot in the indirect queue.

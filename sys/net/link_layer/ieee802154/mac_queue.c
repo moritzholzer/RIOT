@@ -291,6 +291,7 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
     dsc->deadline_tick = deadline;
     if (was_empty) {
         txq->deadline_tick = &dsc->deadline_tick;
+        ieee802154_mac_tick_arm(mac);
     }
     ieee802154_mac_tx_commit(txq);
     if (indirect) {

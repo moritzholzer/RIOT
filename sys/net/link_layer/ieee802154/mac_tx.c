@@ -22,19 +22,8 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
         mac->indirect_q.busy = false;
         return;
     }
-
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(&indirect_q->q[slot]);
     d->tx_state = IEEE802154_TX_STATE_DONE;
-    DEBUG("IEEE802154 MAC: TX state DONE (handle=%u, status=%d)\n", d->handle, status);
-    if (d->indirect &&
-        ((status == TX_STATUS_MEDIUM_BUSY) || (status == TX_STATUS_NO_ACK))) {
-        d->tx_state = IEEE802154_TX_STATE_QUEUED;
-        mac->indirect_q.busy = false;
-        if (mac->is_coordinator || mac->scan_active || mac->assoc_pending) {
-            mac->cbs.rx_request(mac);
-        }
-        return;
-    }
     if ((d->type == IEEE802154_FCF_TYPE_DATA) && mac->cbs.data_confirm) {
         mac->cbs.data_confirm(mac->cbs.mac, d->handle, status);
     }
@@ -69,8 +58,8 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
     if (mac->assoc_pending &&
         ieee802154_mac_frame_is_expired(mac->indirect_q.tick, mac->assoc_deadline_tick)) {
         mac->assoc_pending = false;
-        //(void)ieee802154_mac_fsm_process_ev_ctx(mac, IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT, NULL);
-        //(void)ieee802154_set_idle(&mac->submac);
+        (void)ieee802154_mac_fsm_process_ev_ctx(mac, IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT, NULL);
+        (void)ieee802154_set_idle(&mac->submac);
     }
     if (mac->poll_rx_active &&
         ieee802154_mac_frame_is_expired(mac->indirect_q.tick, mac->poll_rx_deadline) &&
