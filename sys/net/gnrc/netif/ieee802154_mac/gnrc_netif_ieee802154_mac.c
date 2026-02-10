@@ -418,11 +418,16 @@ static void _mac_ack_timeout(void *arg)
     event_post(&dev->netif->evq[GNRC_NETIF_EVQ_INDEX_PRIO_HIGH], &dev->ev_ack_timeout);
 }
 
-static void _mac_allocate_request(void *arg)
+static void _mac_allocate_request(void *arg, size_t len)
 {
     ieee802154_mac_t *mac = (ieee802154_mac_t *)arg;
     gnrc_netif_ieee802154_mac_dev_t *dev = _dev_from_mac(mac);
-    dev->rx_alloc_len = IEEE802154_FRAME_LEN_MAX;
+    if ((len == 0) || (len > IEEE802154_FRAME_LEN_MAX)) {
+        dev->rx_alloc_len = IEEE802154_FRAME_LEN_MAX;
+    }
+    else {
+        dev->rx_alloc_len = len;
+    }
     event_post(&dev->netif->evq[GNRC_NETIF_EVQ_INDEX_PRIO_HIGH], &dev->ev_alloc);
 }
 
