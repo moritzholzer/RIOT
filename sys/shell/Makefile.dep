@@ -182,6 +182,9 @@ ifneq (,$(filter shell_cmd_gnrc_netif_lorawan,$(USEMODULE)))
   USEMODULE += shell_cmd_gnrc_netif_lora
   USEMODULE += shell_cmd_gnrc_netif
 endif
+ifneq (,$(filter gnrc_netif_ieee802154_mac,$(USEMODULE)))
+  USEMODULE += shell_cmd_iwpan
+endif
 ifneq (,$(filter shell_cmd_gnrc_pktbuf,$(USEMODULE)))
     USEMODULE += gnrc_pktbuf
 endif
@@ -204,6 +207,9 @@ ifneq (,$(filter shell_cmd_i2c_scan,$(USEMODULE)))
 endif
 ifneq (,$(filter shell_cmd_iw,$(USEMODULE)))
   USEMODULE += ztimer_sec
+endif
+ifneq (,$(filter shell_cmd_iwpan,$(USEMODULE)))
+  USEMODULE += gnrc_netif_ieee802154_mac
 endif
 ifneq (,$(filter shell_cmd_lwip_netif,$(USEMODULE)))
   USEMODULE += lwip_netif
