@@ -129,12 +129,7 @@ static int _mac_assoc_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ct
     mac->cmd.iol_next = NULL;
     uint8_t handle = 0xFFU;
 
-    ieee802154_pib_value_t short_addr;
     ieee802154_addr_mode_t src_mode = IEEE802154_ADDR_MODE_EXTENDED;
-    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr);
-    if (short_addr.v.short_addr.u16 != 0xFFFFU) {
-        src_mode = IEEE802154_ADDR_MODE_SHORT;
-    }
 
     int res = _mac_enqueue_and_tx(mac, ctx, src_mode, IEEE802154_FCF_TYPE_MACCMD,
                                   &mac->cmd, &handle, true, false);
@@ -187,15 +182,11 @@ static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
     mac->cmd.iol_next = NULL;
     uint8_t handle = 0xFFU;
 
-    ieee802154_pib_value_t short_addr;
     ieee802154_addr_mode_t src_mode = IEEE802154_ADDR_MODE_EXTENDED;
-    ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &short_addr);
-    if (short_addr.v.short_addr.u16 != 0xFFFFU) {
-        src_mode = IEEE802154_ADDR_MODE_SHORT;
-    }
 
+    /* Association response should be sent indirectly after a data request */
     return _mac_enqueue_and_tx(mac, ctx, src_mode, IEEE802154_FCF_TYPE_MACCMD,
-                               &mac->cmd, &handle, true, false);
+                               &mac->cmd, &handle, true, true);
 }
 
 static void _debug_data_req(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
