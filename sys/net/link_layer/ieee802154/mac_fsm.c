@@ -11,9 +11,10 @@
 #include "mac_internal_priv.h"
 #include "mac_pib.h"
 #include "net/ieee802154/mac.h"
+#include "net/ieee802154.h"
 #include "net/eui_provider.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mode,
@@ -419,19 +420,9 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_COORDINATOR;
     case IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ:
         if (ctx) {
-            DEBUG("SENDING BEACON\n");
             _mac_enqueue_beacon(mac);
-            const void *dst_addr = NULL;
-            ieee802154_addr_mode_t dst_mode = IEEE802154_ADDR_MODE_NONE;
-            if (ctx->src_len > 0) {
-                dst_mode = ctx->src_mode;
-                dst_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
-                           ? (const void *)ctx->src
-                           : (const void *)&ctx->src_addr;
-            }
-            if (_mac_tx_request(mac, dst_mode, dst_addr) < 0)
+            if (_mac_tx_request(mac, IEEE802154_ADDR_MODE_NONE, NULL) < 0)
             {
-                DEBUG("ERROR SENDING BEACON\n");
             }
         }
         return IEEE802154_MAC_STATE_COORDINATOR;
@@ -738,9 +729,6 @@ static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mod
     int slot = ieee802154_mac_indirectq_search_slot(mac, dst_mode, dst_addr);
 
     if (slot < 0) {
-        if (mac->is_coordinator) {
-            mac->cbs.rx_request(mac);
-        }
         return 1;
     }
     ieee802154_mac_txq_t *txq = &mac->indirect_q.q[slot];
@@ -748,44 +736,17 @@ static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mod
         ieee802154_mac_handle_indirectq_auto_free(mac, &mac->indirect_q, slot);
         return -ENOBUFS;
     }
-
-    DEBUG("IEEE802154 MAC: TX slot=%d key_mode=%u dst_mode=%u\n",
-          slot, (unsigned)txq->key_mode, (unsigned)txq->dst_mode);
     if (txq->key_mode == IEEE802154_ADDR_MODE_SHORT) {
-        network_uint16_t s = txq->dst_short_addr;
-        DEBUG("IEEE802154 MAC: TX dst_short=0x%04x raw=%02x%02x\n",
-              byteorder_ntohs(s), s.u8[0], s.u8[1]);
+        (void)txq->dst_short_addr;
     }
     else if (txq->key_mode == IEEE802154_ADDR_MODE_EXTENDED) {
-        const uint8_t *e = txq->dst_ext_addr.uint8;
-        DEBUG("IEEE802154 MAC: TX dst_ext=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
-              e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7]);
+        (void)txq->dst_ext_addr;
     }
 
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);
-    if (d) {
-        uint8_t dst_buf[IEEE802154_LONG_ADDRESS_LEN];
-        le_uint16_t dst_pan = { .u16 = 0 };
-        int dst_len = ieee802154_get_dst(d->mhr, dst_buf, &dst_pan);
-        if (dst_len == IEEE802154_SHORT_ADDRESS_LEN) {
-            network_uint16_t dst_short = { .u8 = { dst_buf[0], dst_buf[1] } };
-            DEBUG("IEEE802154 MAC: TX mhr dst_pan=0x%04x dst_short=0x%04x\n",
-                  byteorder_ltohs(dst_pan), byteorder_ntohs(dst_short));
-        }
-        else if (dst_len == IEEE802154_LONG_ADDRESS_LEN) {
-            DEBUG("IEEE802154 MAC: TX mhr dst_pan=0x%04x dst_ext=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
-                  byteorder_ltohs(dst_pan),
-                  dst_buf[0], dst_buf[1], dst_buf[2], dst_buf[3],
-                  dst_buf[4], dst_buf[5], dst_buf[6], dst_buf[7]);
-        }
-        else {
-            DEBUG("IEEE802154 MAC: TX mhr dst_len=%d\n", dst_len);
-        }
-    }
     mac->indirect_q.current_slot = slot;
     mac->indirect_q.current_txq = txq;
     d->tx_state = IEEE802154_TX_STATE_IN_PROGRESS;
-    DEBUG("IEEE802154 MAC: TX state IN_PROGRESS (handle=%u)\n", d->handle);
     int r = ieee802154_send(&mac->submac, &d->iol_mhr);
     if (r != 0)
     {
