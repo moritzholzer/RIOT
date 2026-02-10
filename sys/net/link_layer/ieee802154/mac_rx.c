@@ -127,6 +127,9 @@ static bool _mac_rx_prepare_ctx(ieee802154_mac_t *mac, iolist_t *buf, int len,
     }
     if (src_len > 0) {
         memcpy(ctx->src, src, (size_t)src_len);
+        if (src_len == IEEE802154_LONG_ADDRESS_LEN) {
+            memcpy(ctx->src_addr.uint8, src, IEEE802154_LONG_ADDRESS_LEN);
+        }
     }
 
     if (!_mac_rx_decode_frame(mac, buf, len, mhr_len, *frame_type, ctx, ev, do_fsm)) {
@@ -153,8 +156,8 @@ void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
     ieee802154_rx_info_t info;
     buf->iol_len = len;
     (void)ieee802154_read_frame(&mac->submac, buf->iol_base, buf->iol_len, &info);
+    mutex_unlock(&mac->submac_lock);
     if (!_mac_rx_prepare_ctx(mac, buf, len, &info, &ctx, &ev, &frame_type, &do_fsm)) {
-        mutex_unlock(&mac->submac_lock);
         return;
     }
     if (do_fsm) {
@@ -171,5 +174,4 @@ void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
     {
         mac->cbs.rx_request(mac);
     }
-    mutex_unlock(&mac->submac_lock);
 }
