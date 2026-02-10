@@ -92,7 +92,9 @@ void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status)
 void ieee802154_mac_ack_timeout_fired(ieee802154_mac_t *mac)
 {
     mutex_lock(&mac->submac_lock);
-    ieee802154_submac_ack_timeout_fired(&mac->submac);
+    if (mac->submac.wait_for_ack) {
+        ieee802154_submac_ack_timeout_fired(&mac->submac);
+    }
     mutex_unlock(&mac->submac_lock);
 }
 
