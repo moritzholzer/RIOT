@@ -51,15 +51,6 @@ extern "C" {
 #endif
 
 /**
- * @brief   Buffer structure for GNRC IEEE 802.15.4 MAC adapter
- */
-typedef struct {
-    iolist_t iol;
-    uint8_t buf[IEEE802154_FRAME_LEN_MAX];
-    bool in_use;
-} gnrc_netif_ieee802154_mac_buf_t;
-
-/**
  * @brief   RX queue entry for GNRC IEEE 802.15.4 MAC adapter
  */
 typedef struct {
@@ -77,13 +68,11 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
     gnrc_nettype_t proto;
 
     mutex_t rx_lock;
-    gnrc_netif_ieee802154_mac_buf_t rx_pool[GNRC_NETIF_IEEE802154_MAC_RX_BUF_NUM];
-    gnrc_netif_ieee802154_mac_rx_entry_t rxq[GNRC_NETIF_IEEE802154_MAC_RX_BUF_NUM];
     uint8_t rxq_head;
     uint8_t rxq_tail;
     uint8_t rxq_len;
-    gnrc_netif_ieee802154_mac_buf_t tx_pool[GNRC_NETIF_IEEE802154_MAC_TX_BUF_NUM];
-
+    gnrc_netif_ieee802154_mac_rx_entry_t rxq[GNRC_NETIF_IEEE802154_MAC_RX_BUF_NUM];
+    
     mutex_t tx_lock;
     bool tx_done;
     int last_tx_status;
