@@ -225,12 +225,14 @@ static ieee802154_fsm_state_t _fsm_state_rx(ieee802154_submac_t *submac, ieee802
             /* sending ACK if radio does not support auto-ACK */
             if (!_does_send_ack(dev)) {
                 ieee802154_filter_mode_t mode;
-                if ((submac->rx_buf[0] & IEEE802154_FCF_TYPE_MASK) == IEEE802154_FCF_TYPE_DATA &&
+                uint8_t frame_type = submac->rx_buf[0] & IEEE802154_FCF_TYPE_MASK;
+                if (((frame_type == IEEE802154_FCF_TYPE_DATA) ||
+                     (frame_type == IEEE802154_FCF_TYPE_MACCMD)) &&
                     (submac->rx_buf[0] & IEEE802154_FCF_ACK_REQ) &&
                     (ieee802154_radio_get_frame_filter_mode(dev, &mode) < 0 ||
                     mode == IEEE802154_FILTER_ACCEPT)) {
-                    if ((res = _handle_fsm_ev_tx_ack(submac, ieee802154_get_seq(submac->rx_buf))) < 0) {
-                        DEBUG("IEEE802154 submac: Sending ACK failed with status: %d\n", res);
+                    uint8_t seq = ieee802154_get_seq(submac->rx_buf);
+                    if ((res = _handle_fsm_ev_tx_ack(submac, seq)) < 0) {
                     }
                     else {
                        /* Do not call rx_done yet. ACK must be sent first */
@@ -448,8 +450,8 @@ static ieee802154_fsm_state_t _fsm_state_wait_for_ack(ieee802154_submac_t *subma
     switch (ev) {
     case IEEE802154_FSM_EV_RX_DONE:
         assert(!ieee802154_radio_has_irq_ack_timeout(&submac->dev));
-        if (ieee802154_radio_read(&submac->dev, ack, 3, NULL) &&
-            ack[0] & IEEE802154_FCF_TYPE_ACK) {
+        int res = ieee802154_radio_read(&submac->dev, ack, sizeof(ack), NULL);
+        if (res > 0 && (ack[0] & IEEE802154_FCF_TYPE_ACK)) {
             ieee802154_submac_ack_timer_cancel(submac);
             ieee802154_tx_info_t tx_info;
             tx_info.retrans = submac->retrans;
