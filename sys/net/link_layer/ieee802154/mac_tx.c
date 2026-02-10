@@ -9,7 +9,7 @@
 
 #include "mac_internal_priv.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indirect_q, int slot,
@@ -56,6 +56,7 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
 void ieee802154_mac_tick(ieee802154_mac_t *mac)
 {
     mutex_lock(&mac->submac_lock);
+    mutex_lock(&mac->indirect_q.lock);
     mac->indirect_q.tick++;
     if (mac->assoc_pending &&
         ieee802154_mac_frame_is_expired(mac->indirect_q.tick, mac->assoc_deadline_tick)) {
@@ -79,6 +80,7 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
         }
     }
     ztimer_set(ZTIMER_USEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_US);
+    mutex_unlock(&mac->indirect_q.lock);
     mutex_unlock(&mac->submac_lock);
 }
 
@@ -90,7 +92,9 @@ void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status)
 void ieee802154_mac_ack_timeout_fired(ieee802154_mac_t *mac)
 {
     mutex_lock(&mac->submac_lock);
-    ieee802154_submac_ack_timeout_fired(&mac->submac);
+    if (mac->submac.wait_for_ack) {
+        ieee802154_submac_ack_timeout_fired(&mac->submac);
+    }
     mutex_unlock(&mac->submac_lock);
 }
 
