@@ -205,6 +205,10 @@ typedef enum {
      */
     NETOPT_PRELOADING,
     /**
+     * @brief   (@ref netopt_enable_t) send frames as indirect (if supported)
+     */
+    NETOPT_TX_INDIRECT,
+    /**
      * @brief   (@ref netopt_enable_t) promiscuous mode
      */
     NETOPT_PROMISCUOUSMODE,
