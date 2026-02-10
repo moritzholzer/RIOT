@@ -129,7 +129,7 @@ void iwpan_scan_confirm(void *arg, int status, ieee802154_mlme_scan_req_t *req)
         return;
     }
     for (size_t i = 0; i < *req->results_used; i++) {
-        char addr_str[IEEE802154_LONG_ADDRESS_LEN_STR_MAX];
+        char addr_str[3 * IEEE802154_LONG_ADDRESS_LEN];
         const ieee802154_scan_result_t *res = &req->results[i];
         if (res->coord_addr.type == IEEE802154_ADDR_MODE_EXTENDED) {
             l2util_addr_to_str(res->coord_addr.v.ext_addr.uint8,
