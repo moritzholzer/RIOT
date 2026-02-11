@@ -24,7 +24,7 @@
 #include "kernel_defines.h"
 #include "errno.h"
 
-#define ENABLE_DEBUG 0
+#define ENABLE_DEBUG 1
 #include "debug.h"
 
 #define CSMA_SENDER_BACKOFF_PERIOD_UNIT_US  (320U)
@@ -172,7 +172,7 @@ static int _handle_fsm_ev_tx_ack(ieee802154_submac_t *submac, uint8_t seq_num)
         return 0;
     }
     uint8_t ack[]
-         = { IEEE802154_FCF_TYPE_ACK, 0x00,  seq_num };
+         = { IEEE802154_FCF_TYPE_ACK | IEEE802154_FCF_FRAME_PEND, 0x00,  seq_num };
     iolist_t iolist = {
         .iol_base = ack,
         .iol_len = sizeof(ack),
@@ -368,6 +368,7 @@ static ieee802154_fsm_state_t _fsm_state_tx_process_tx_done(ieee802154_submac_t 
     switch (info->status) {
     case TX_STATUS_FRAME_PENDING:
         assert(_does_handle_ack(dev));
+        info->frame_pending = true;
     /* FALL-THRU */
     case TX_STATUS_SUCCESS:
         submac->csma_retries_nb = 0;
@@ -380,6 +381,7 @@ static ieee802154_fsm_state_t _fsm_state_tx_process_tx_done(ieee802154_submac_t 
          * and enable the ACK filter */
         else {
             ieee802154_radio_set_frame_filter_mode(dev, IEEE802154_FILTER_ACK_ONLY);
+            DEBUG("IEEE802154 submac: filter -> ACK_ONLY\n");
             res = ieee802154_radio_set_rx(dev);
             assert (res >= 0);
 
@@ -455,10 +457,10 @@ static ieee802154_fsm_state_t _fsm_state_wait_for_ack(ieee802154_submac_t *subma
             ieee802154_submac_ack_timer_cancel(submac);
             ieee802154_tx_info_t tx_info;
             tx_info.retrans = submac->retrans;
-            bool fp = (ack[0] & IEEE802154_FCF_FRAME_PEND);
+            tx_info.frame_pending = (ack[0] & IEEE802154_FCF_FRAME_PEND);
             ieee802154_radio_set_frame_filter_mode(&submac->dev, IEEE802154_FILTER_ACCEPT);
-            return _tx_end(submac, fp ? TX_STATUS_FRAME_PENDING : TX_STATUS_SUCCESS,
-                           &tx_info);
+            DEBUG("IEEE802154 submac: filter -> ACCEPT (ACK received)\n");
+            return _tx_end(submac, TX_STATUS_SUCCESS, &tx_info);
         }
         return IEEE802154_FSM_STATE_WAIT_FOR_ACK;
     case IEEE802154_FSM_EV_CRC_ERROR:

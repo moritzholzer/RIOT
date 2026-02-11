@@ -50,7 +50,7 @@ static void _submac_tx_done(ieee802154_submac_t *submac, int status, ieee802154_
 {
     (void)info;
     ieee802154_mac_t *mac = container_of(submac, ieee802154_mac_t, submac);
-    ieee802154_mac_tx_finish_current(mac, status);
+    ieee802154_mac_tx_finish_current(mac, status, info);
 }
 
 static const ieee802154_submac_cb_t _submac_cbs = {
@@ -120,7 +120,7 @@ void ieee802154_init_mac_internal(ieee802154_mac_t *mac)
     mac->ack_timer.arg = mac;
     mac->scan_timer.callback = mac->cbs.scan_timer_request;
     mac->scan_timer.arg = mac;
-    ztimer_set(ZTIMER_USEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_US);
+    ztimer_set(ZTIMER_MSEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_MS);
     mutex_unlock(&mac->submac_lock);
 }
 

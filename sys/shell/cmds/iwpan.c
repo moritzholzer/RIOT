@@ -159,6 +159,32 @@ void iwpan_scan_confirm(void *arg, int status, ieee802154_mlme_scan_req_t *req)
     }
 }
 
+void iwpan_associate_confirm(void *arg, int status, uint16_t short_addr)
+{
+    (void)arg;
+    if (status == IEEE802154_ASSOC_STATUS_SUCCESS) {
+        printf("ASSOC confirm res=%d (SUCCESS), short_addr=0x%04x\n",
+               status, short_addr);
+        return;
+    }
+
+    if (status < 0) {
+        printf("ASSOC confirm res=%d (%s), short_addr=0x%04x\n",
+               status, strerror(-status), short_addr);
+        return;
+    }
+
+    const char *reason = "UNKNOWN";
+    if (status == IEEE802154_ASSOC_STATUS_PAN_AT_CAPACITY) {
+        reason = "PAN_AT_CAPACITY";
+    }
+    else if (status == IEEE802154_ASSOC_STATUS_PAN_ACCESS_DENIED) {
+        reason = "PAN_ACCESS_DENIED";
+    }
+    printf("ASSOC confirm res=%d (%s), short_addr=0x%04x\n",
+           status, reason, short_addr);
+}
+
 static int _parse_coord_addr(const char *addr_str, ieee802154_addr_t *addr)
 {
     if (strchr(addr_str, ':') == NULL) {
@@ -203,6 +229,7 @@ static int _iwpan(int argc, char **argv)
              "       iwpan <if_id> poll <interval_ms|off>\n"
              "       iwpan <if_id> get\n"
              "       iwpan <if_id> set indirect <on|off>\n"
+             "       iwpan <if_id> set rx_on_when_idle <on|off>\n"
              "       iwpan <if_id> start <channel> <panid> [short_addr] [payload]\n"
              "       iwpan <if_id> join <channel> <panid> <coord_addr> [capability]\n");
         return 1;
@@ -223,32 +250,46 @@ static int _iwpan(int argc, char **argv)
             puts("Usage: iwpan <if_id> set indirect <on|off>\n");
             return 1;
         }
-        if (strcmp(argv[3], "indirect") != 0) {
-            puts("Usage: iwpan <if_id> set indirect <on|off>\n");
-            return 1;
+        if (strcmp(argv[3], "indirect") == 0) {
+            netopt_enable_t en;
+            if (strcmp(argv[4], "on") == 0) {
+                en = NETOPT_ENABLE;
+            }
+            else if (strcmp(argv[4], "off") == 0) {
+                en = NETOPT_DISABLE;
+            }
+            else {
+                puts("Usage: iwpan <if_id> set indirect <on|off>\n");
+                return 1;
+            }
+            if (netif_set_opt(&netif->netif, NETOPT_TX_INDIRECT, 0,
+                              &en, sizeof(en)) < 0) {
+                puts("set indirect failed");
+                return 1;
+            }
+            return 0;
         }
-        netopt_enable_t en;
-        if (strcmp(argv[4], "on") == 0) {
-            en = NETOPT_ENABLE;
+        if (strcmp(argv[3], "rx_on_when_idle") == 0) {
+            bool enable;
+            if (strcmp(argv[4], "on") == 0) {
+                enable = true;
+            }
+            else if (strcmp(argv[4], "off") == 0) {
+                enable = false;
+            }
+            else {
+                puts("Usage: iwpan <if_id> set rx_on_when_idle <on|off>\n");
+                return 1;
+            }
+            _set_rx_on_when_idle(mac, enable);
+            if (enable && mac->cbs.rx_request) {
+                mac->cbs.rx_request(mac);
+            }
+            return 0;
         }
-        else if (strcmp(argv[4], "off") == 0) {
-            en = NETOPT_DISABLE;
-        }
-        else {
-            puts("Usage: iwpan <if_id> set indirect <on|off>\n");
-            return 1;
-        }
-        if (netif_set_opt(&netif->netif, NETOPT_TX_INDIRECT, 0,
-                          &en, sizeof(en)) < 0) {
-            puts("set indirect failed");
-            return 1;
-        }
-        /* Direct TX requires receiver to keep RX on when idle. */
-        _set_rx_on_when_idle(mac, (en == NETOPT_DISABLE));
-        if ((en == NETOPT_DISABLE) && mac->cbs.rx_request) {
-            mac->cbs.rx_request(mac);
-        }
-        return 0;
+        puts("Usage: iwpan <if_id> set indirect <on|off>\n"
+             "       iwpan <if_id> set rx_on_when_idle <on|off>\n");
+        return 1;
     }
     if (strcmp(argv[2], "poll") == 0) {
         if (argc == 3) {
@@ -364,12 +405,43 @@ static int _iwpan(int argc, char **argv)
             printf("join failed: %d\n", res);
             return 1;
         }
+        const void *coord_ptr = NULL;
+        if (coord_addr.type == IEEE802154_ADDR_MODE_SHORT) {
+            coord_ptr = &coord_addr.v.short_addr;
+        }
+        else if (coord_addr.type == IEEE802154_ADDR_MODE_EXTENDED) {
+            coord_ptr = &coord_addr.v.ext_addr;
+        }
+        if (coord_ptr) {
+            /* Force RX on during association poll window */
+            ieee802154_pib_value_t rx_on_prev;
+            ieee802154_mac_mlme_get_request(mac, IEEE802154_PIB_RX_ON_WHEN_IDLE, &rx_on_prev);
+            _set_rx_on_when_idle(mac, true);
+            if (mac->cbs.rx_request) {
+                mac->cbs.rx_request(mac);
+            }
+            int pres = -1;
+            for (int attempt = 0; attempt < 5; attempt++) {
+                pres = ieee802154_mac_mlme_poll(mac, coord_addr.type, panid, coord_ptr);
+                if ((pres != -EBUSY) && (pres != -ENOBUFS)) {
+                    break;
+                }
+                ztimer_sleep(ZTIMER_MSEC, 20);
+            }
+            if (pres < 0) {
+                printf("poll request failed: %d (%s)\n", pres, strerror(-pres));
+            }
+            /* keep RX on briefly to catch indirect response, then restore */
+            ztimer_sleep(ZTIMER_MSEC, 50);
+            _set_rx_on_when_idle(mac, rx_on_prev.v.b);
+        }
         return 0;
     }
     puts("Usage: iwpan <if_id> scan [active] <duration_us> <ch1> [ch2 ...]\n"
          "       iwpan <if_id> poll <interval_ms|off>\n"
          "       iwpan <if_id> get\n"
          "       iwpan <if_id> set indirect <on|off>\n"
+         "       iwpan <if_id> set rx_on_when_idle <on|off>\n"
          "       iwpan <if_id> start <channel> <panid> [short_addr] [payload]\n"
          "         short_addr: 00:01\n"
          "       iwpan <if_id> join <channel> <panid> <coord_addr> [capability]\n"
