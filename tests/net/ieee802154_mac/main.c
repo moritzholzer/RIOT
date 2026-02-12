@@ -361,8 +361,6 @@ static void _ev_rx_handler(event_t *event)
 {
     (void)event;
     if (ieee802154_set_rx(&mac.submac) < 0) {
-        /* Radio still in TX or busy; retry shortly */
-        ztimer_set(ZTIMER_MSEC, &rx_timer, 2);
     }
 }
 
