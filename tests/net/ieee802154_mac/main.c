@@ -367,6 +367,7 @@ static void _ev_rx_handler(event_t *event)
 static void _ev_assoc_indication_handler(event_t *event)
 {
     (void)event;
+    puts("asssoc indication\n");
     uint8_t addr_len;
     ieee802154_addr_mode_t mode;
     ieee802154_assoc_capability_t cap;

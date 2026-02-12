@@ -130,7 +130,9 @@ uint16_t ieee802154_indirect_get_deadline(ieee802154_mac_t *mac)
 
 bool ieee802154_mac_frame_is_expired(uint16_t now_tick, uint16_t deadline_tick)
 {
-    return (bool)((now_tick - deadline_tick) >= 0);
+    return ((int16_t)(now_tick - deadline_tick)) >= 0;
+
+    //return (bool)((now_tick - deadline_tick) >= 0);
 }
 
 void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
@@ -138,10 +140,6 @@ void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
                                        const void *dst_addr,
                                        bool pending)
 {
-#ifdef ENABLE_DEBUG
-    printf("indirectq: fp_update pending=%d dst_mode=%u\n",
-           pending, (unsigned)dst_mode);
-#endif
 #ifdef IEEE802154_MAC_INDIRECT_ENABLE
     ieee802154_dev_t *dev = &mac->submac.dev;
 #  ifdef IEEE802154_MAC_HAS_SRC_ADDR_MATCH
@@ -165,7 +163,7 @@ void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
     }
 #  else
     (void) dst_mode;
-    (void)dst_addr;
+    (void) dst_addr;
     bool any_pending = pending;
     if (!pending) {
         any_pending = !ieee802154_indirectq_empty(&mac->indirect_q);
@@ -187,7 +185,6 @@ void ieee802154_mac_handle_indirectq_auto_free(ieee802154_mac_t *mac,
     ieee802154_mac_txq_t *txq = &indirect_q->q[slot];
 
     if (ieee802154_mac_tx_empty(txq)) {
-        printf("indirectq: auto-free slot %u (empty)\n", slot);
         const ieee802154_addr_mode_t key_mode = txq->key_mode;
         const void *dst_addr = NULL;
         network_uint16_t dst_short = { .u16 = 0 };
@@ -233,7 +230,6 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
     dsc->ack = ack_req;
     dsc->indirect = indirect;
     dsc->tx_state = IEEE802154_TX_STATE_QUEUED;
-    DEBUG("IEEE802154 MAC: TX state QUEUED (handle=%u)\n", dsc->handle);
 
     /* src addr selection */
     const void *src = NULL;
@@ -298,6 +294,7 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
         txq->deadline_tick = &dsc->deadline_tick;
     }
     ieee802154_mac_tx_commit(txq);
+
     if (indirect) {
         ieee802154_mac_indirect_fp_update(mac, dst_mode, dst_addr, true);
     }
@@ -429,6 +426,7 @@ int ieee802154_mac_map_push(ieee802154_mac_t *mac,
         mutex_unlock(&mac->indirect_q.lock);
         return -ENOBUFS;
     }
+
     int res = _enqueue_data_tx(mac, frame_type, &mac->indirect_q.q[slot], src_mode,
                                dst_mode, dst_panid, dst_addr, msdu,
                                msdu_handle, ack_req, indirect);

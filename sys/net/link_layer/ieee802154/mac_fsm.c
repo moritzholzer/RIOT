@@ -15,7 +15,7 @@
 #include "net/eui_provider.h"
 #include "ztimer.h"
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mode,
@@ -53,6 +53,7 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
 
 static const char *const _mac_fsm_ev_str[] = {
     [IEEE802154_MAC_FSM_EV_SCAN_START] = "SCAN_START",
+    [IEEE802154_MAC_FSM_EV_SCAN_TIMER] = "SCAN_TIMER",
     [IEEE802154_MAC_FSM_EV_SCAN_DONE] = "SCAN_DONE",
     [IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX] = "ASSOC_REQ_RX",
     [IEEE802154_MAC_FSM_EV_ASSOC_RES_RX] = "ASSOC_RES_RX",
@@ -93,7 +94,6 @@ static int _mac_enqueue_and_tx(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
     if (!ctx || !ctx->result || !ctx->data_dst_addr) {
         return -EINVAL;
     }
-
     int res = ieee802154_mac_map_push(mac, frame_type,
                                       src_mode, ctx->dst_mode,
                                       &ctx->dst_panid, ctx->data_dst_addr,
@@ -700,6 +700,7 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
             return res;
         }
         mac->is_coordinator = true;
+        mac->cbs.rx_request(mac);
     }
 
     return 0;
@@ -785,6 +786,7 @@ static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mod
     int r = ieee802154_send(&mac->submac, &d->iol_mhr);
     if (r != 0)
     {
+        DEBUG("Failed sending\n");
         ieee802154_mac_tx_finish_current(mac, r, NULL);
         return -EIO;
     }

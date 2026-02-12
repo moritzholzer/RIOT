@@ -62,7 +62,6 @@ static void _tx_finish(ieee802154_mac_t *mac, ieee802154_mac_indirect_q_t *indir
 
 void ieee802154_mac_tick(ieee802154_mac_t *mac)
 {
-    mutex_lock(&mac->submac_lock);
     mutex_lock(&mac->indirect_q.lock);
     mac->indirect_q.tick++;
     if (mac->assoc_pending &&
@@ -74,8 +73,11 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
     if (mac->poll_rx_active &&
         ieee802154_mac_frame_is_expired(mac->indirect_q.tick, mac->poll_rx_deadline) &&
         !mac->is_coordinator && !mac->scan_active) {
+        puts("expired\n");
         mac->poll_rx_active = false;
+        mutex_lock(&mac->submac_lock);
         (void)ieee802154_set_idle(&mac->submac);
+        mutex_unlock(&mac->submac_lock);
     }
     for (unsigned i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
         ieee802154_mac_txq_t *txq = &mac->indirect_q.q[i];
@@ -88,7 +90,6 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
     }
     ztimer_set(ZTIMER_MSEC, &mac->tick, (uint32_t)IEEE802154_MAC_TICK_INTERVAL_MS);
     mutex_unlock(&mac->indirect_q.lock);
-    mutex_unlock(&mac->submac_lock);
 }
 
 void ieee802154_mac_tx_finish_current(ieee802154_mac_t *mac, int status, ieee802154_tx_info_t *info)

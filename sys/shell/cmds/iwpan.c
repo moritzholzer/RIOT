@@ -413,6 +413,7 @@ static int _iwpan(int argc, char **argv)
             coord_ptr = &coord_addr.v.ext_addr;
         }
         if (coord_ptr) {
+            puts("poll\n");
             /* Force RX on during association poll window */
             ieee802154_pib_value_t rx_on_prev;
             ieee802154_mac_mlme_get_request(mac, IEEE802154_PIB_RX_ON_WHEN_IDLE, &rx_on_prev);
