@@ -368,6 +368,7 @@ static ieee802154_fsm_state_t _fsm_state_tx_process_tx_done(ieee802154_submac_t 
     switch (info->status) {
     case TX_STATUS_FRAME_PENDING:
         assert(_does_handle_ack(dev));
+        info->frame_pending = true;
     /* FALL-THRU */
     case TX_STATUS_SUCCESS:
         submac->csma_retries_nb = 0;
