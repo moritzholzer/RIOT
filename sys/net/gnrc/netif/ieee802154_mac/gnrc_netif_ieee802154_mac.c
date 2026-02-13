@@ -65,6 +65,7 @@ static ieee802154_dev_type_t _dev_type_cfg = IEEE802154_DEV_TYPE_INVALID;
 static gnrc_netif_ieee802154_mac_radio_init_cb_t _radio_init_cb;
 static void *_radio_init_arg;
 static unsigned _radio_init_idx;
+mutex_t assoc_lock;
 static int _netdev_init(netdev_t *dev);
 static int _netdev_send(netdev_t *dev, const iolist_t *iolist);
 static int _netdev_recv(netdev_t *dev, void *buf, size_t len, void *info);
@@ -75,6 +76,7 @@ static int _netdev_confirm_send(netdev_t *dev, void *info);
 #if IS_USED(MODULE_SHELL_CMD_IWPAN)
 extern void iwpan_scan_confirm(void *arg, int status,
                                ieee802154_mlme_scan_req_t *req);
+extern void iwpan_associate_confirm(void *arg, int status, uint16_t short_addr);
 #endif
 static void _mac_scan_confirm(void *arg, int status, ieee802154_mlme_scan_req_t *req);
 static void _mac_associate_indication(void *arg, const uint8_t *device_addr,
@@ -244,17 +246,41 @@ static void _ev_assoc_res_handler(event_t *event)
 {
     gnrc_netif_ieee802154_mac_dev_t *dev =
         container_of(event, gnrc_netif_ieee802154_mac_dev_t, ev_assoc_res);
+    mutex_lock(&assoc_lock);
     if (!dev->assoc_res_pending) {
         return;
     }
+#if IS_USED(MODULE_SHELL_CMD_IWPAN)
+    char addr_str[3 * IEEE802154_LONG_ADDRESS_LEN];
+    if (dev->assoc_res_dst.type == IEEE802154_ADDR_MODE_SHORT) {
+        snprintf(addr_str, sizeof(addr_str), "0x%04x", dev->assoc_res_short_addr);
+    }
+    else {
+        l2util_addr_to_str(dev->assoc_res_dst.v.ext_addr.uint8,
+                           IEEE802154_LONG_ADDRESS_LEN, addr_str);
+    }
+    printf("ASSOC indication from %s, status=%u\n",
+           addr_str, (unsigned)dev->assoc_res_status);
+#endif
+
     dev->assoc_res_pending = false;
     int res = ieee802154_mac_mlme_associate_response(&dev->mac,
                                                      &dev->assoc_res_dst,
                                                      dev->assoc_res_status,
                                                      dev->assoc_res_short_addr);
+#if IS_USED(MODULE_SHELL_CMD_IWPAN)
+    if (res < 0) {
+        printf("ASSOC response failed: %d (%s)\n", res, strerror(-res));
+    }
+    else {
+        printf("ASSOC response sent: status=%u short_addr=0x%04x\n",
+               (unsigned)dev->assoc_res_status, dev->assoc_res_short_addr);
+    }
+#endif
     if (res < 0) {
         DEBUG("IEEE802154 MAC: auto-assoc response failed (%d)\n", res);
     }
+    mutex_unlock(&assoc_lock);
 }
 
 static void _ev_bh_request_handler(event_t *event)
@@ -374,11 +400,12 @@ static void _mac_associate_indication(void *arg, const uint8_t *device_addr,
         status = IEEE802154_ASSOC_STATUS_PAN_ACCESS_DENIED;
         return;
     }
-
+    mutex_lock(&assoc_lock);
     dev->assoc_res_dst = dst_addr;
     dev->assoc_res_status = status;
     dev->assoc_res_short_addr = short_addr;
     dev->assoc_res_pending = true;
+    mutex_unlock(&assoc_lock);
     event_post(&dev->netif->evq[GNRC_NETIF_EVQ_INDEX_PRIO_HIGH], &dev->ev_assoc_res);
 }
 
@@ -721,6 +748,7 @@ static int _netdev_init(netdev_t *dev)
     netdev_register(dev, _netdev_type_from_devtype(_dev_type_cfg), 0);
     dev->driver = &_netdev_driver;
 
+    mutex_init(&assoc_lock);
     mutex_init(&mdev->rx_lock);
     mutex_init(&mdev->tx_lock);
     memset(mdev->rxq, 0, sizeof(mdev->rxq));
@@ -752,7 +780,12 @@ static int _netdev_init(netdev_t *dev)
         .mlme_scan_confirm = _mac_scan_confirm,
         .mlme_start_confirm = NULL,
         .mlme_associate_indication = _mac_associate_indication,
-        .mlme_associate_confirm = NULL,
+        .mlme_associate_confirm =
+#if IS_USED(MODULE_SHELL_CMD_IWPAN)
+            iwpan_associate_confirm,
+#else
+            NULL,
+#endif
         .ack_timeout = _mac_ack_timeout,
         .bh_request = _mac_bh_request,
         .radio_cb_request = _mac_radio_cb,
@@ -951,14 +984,6 @@ static int _netdev_set(netdev_t *dev, netopt_t opt, const void *value, size_t le
         case NETOPT_TX_INDIRECT:
             assert(len == sizeof(netopt_enable_t));
             mdev->tx_indirect = (*(const netopt_enable_t *)value == NETOPT_ENABLE);
-            ieee802154_pib_value_t rx_on = {
-                .type = IEEE802154_PIB_TYPE_BOOL,
-                .v.b = !mdev->tx_indirect,
-            };
-            ieee802154_mac_mlme_set_request(&mdev->mac, IEEE802154_PIB_RX_ON_WHEN_IDLE, &rx_on);
-            if (rx_on.v.b && mdev->netif) {
-                event_post(&mdev->netif->evq[GNRC_NETIF_EVQ_INDEX_PRIO_HIGH], &mdev->ev_rx);
-            }
             res = sizeof(netopt_enable_t);
             break;
         case NETOPT_STATE: {
