@@ -154,6 +154,8 @@ static netdev_type_t _netdev_type_from_devtype(ieee802154_dev_type_t dev_type)
             return NETDEV_SOCKET_ZEP;
         case IEEE802154_DEV_TYPE_KW2XRF:
             return NETDEV_KW2XRF;
+        case IEEE802154_DEV_TYPE_AT86RF2XX:
+            return NETDEV_AT86RF2XX;
         case IEEE802154_DEV_TYPE_MRF24J40:
             return NETDEV_MRF24J40;
         case IEEE802154_DEV_TYPE_ESP_IEEE802154:
@@ -592,7 +594,8 @@ static gnrc_pktsnip_t *_recv(gnrc_netif_t *netif)
             hdr->lqi = rx_info.lqi;
             hdr->rssi = rx_info.rssi;
 #if IS_USED(MODULE_GNRC_NETIF_TIMESTAMP)
-            if (rx_info.flags & NETDEV_RX_IEEE802154_INFO_FLAG_TIMESTAMP) {
+            if (ieee802154_radio_has_capability(&dev->mac.submac.dev,
+                                                IEEE802154_CAP_RX_TIMESTAMP)) {
                 gnrc_netif_hdr_set_timestamp(hdr, rx_info.timestamp);
             }
 #endif
@@ -641,7 +644,8 @@ static gnrc_pktsnip_t *_recv(gnrc_netif_t *netif)
             hdr->lqi = rx_info.lqi;
             hdr->rssi = rx_info.rssi;
 #if IS_USED(MODULE_GNRC_NETIF_TIMESTAMP)
-            if (rx_info.flags & NETDEV_RX_IEEE802154_INFO_FLAG_TIMESTAMP) {
+            if (ieee802154_radio_has_capability(&dev->mac.submac.dev,
+                                                IEEE802154_CAP_RX_TIMESTAMP)) {
                 gnrc_netif_hdr_set_timestamp(hdr, rx_info.timestamp);
             }
 #endif
