@@ -17,9 +17,13 @@
  * @author  Kaspar Schleiser <kaspar@schleiser.de>
  */
 
+#include <errno.h>
+
+#include "kernel_defines.h"
 #include "log.h"
 #include "board.h"
 #include "net/gnrc/netif/ieee802154.h"
+#include "net/gnrc/netif/ieee802154_mac.h"
 #include "net/gnrc.h"
 #include "include/init_devs.h"
 
@@ -41,15 +45,48 @@
 #define AT86RF2XX_NUM ARRAY_SIZE(at86rf2xx_params)
 
 static at86rf2xx_bhp_ev_t at86rf2xx_bhp[AT86RF2XX_NUM];
-static netdev_ieee802154_submac_t at86rf2xx_netdev[AT86RF2XX_NUM];
 static gnrc_netif_t _netif[AT86RF2XX_NUM];
 static char _at86rf2xx_stacks[AT86RF2XX_NUM][AT86RF2XX_MAC_STACKSIZE];
 
+#if IS_USED(MODULE_GNRC_NETIF_IEEE802154_MAC) && \
+    !defined(MODULE_GNRC_GOMACH) && !defined(MODULE_GNRC_LWMAC)
+static gnrc_netif_ieee802154_mac_dev_t at86rf2xx_netdev[AT86RF2XX_NUM];
+
+static int _radio_init_cb(ieee802154_dev_t *radio, ieee802154_dev_type_t dev_type,
+                          unsigned idx, void *arg)
+{
+    (void)dev_type;
+    (void)arg;
+
+    if (idx >= AT86RF2XX_NUM) {
+        return -EINVAL;
+    }
+
+    return at86rf2xx_init_event(&at86rf2xx_bhp[idx], &at86rf2xx_params[idx], radio,
+                                EVENT_PRIO_HIGHEST);
+}
+#else
+static netdev_ieee802154_submac_t at86rf2xx_netdev[AT86RF2XX_NUM];
+#endif
+
 void auto_init_at86rf2xx(void)
 {
+#if IS_USED(MODULE_GNRC_NETIF_IEEE802154_MAC) && \
+    !defined(MODULE_GNRC_GOMACH) && !defined(MODULE_GNRC_LWMAC)
+    gnrc_netif_ieee802154_mac_set_dev_type(IEEE802154_DEV_TYPE_AT86RF2XX);
+    gnrc_netif_ieee802154_mac_set_radio_init_cb(_radio_init_cb, NULL);
+#endif
+
     for (unsigned i = 0; i < AT86RF2XX_NUM; i++) {
         LOG_DEBUG("[auto_init_netif] initializing at86rf2xx #%u\n", i);
 
+#if IS_USED(MODULE_GNRC_NETIF_IEEE802154_MAC) && \
+    !defined(MODULE_GNRC_GOMACH) && !defined(MODULE_GNRC_LWMAC)
+        gnrc_netif_ieee802154_mac_create(&_netif[i], _at86rf2xx_stacks[i],
+                                         AT86RF2XX_MAC_STACKSIZE,
+                                         AT86RF2XX_MAC_PRIO, "at86rf2xx",
+                                         &at86rf2xx_netdev[i]);
+#else
         at86rf2xx_init_event(&at86rf2xx_bhp[i], &at86rf2xx_params[i], &at86rf2xx_netdev[i].submac.dev, EVENT_PRIO_HIGHEST);
         netdev_register(&at86rf2xx_netdev[i].dev.netdev, NETDEV_AT86RF2XX, i);
         netdev_ieee802154_submac_init(&at86rf2xx_netdev[i]);
@@ -68,6 +105,7 @@ void auto_init_at86rf2xx(void)
                                      AT86RF2XX_MAC_STACKSIZE,
                                      AT86RF2XX_MAC_PRIO, "at86rf2xx",
                                      &at86rf2xx_netdev[i].dev.netdev);
+#endif
 #endif
     }
 }

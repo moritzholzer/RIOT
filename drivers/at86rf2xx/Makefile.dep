@@ -6,7 +6,11 @@ USEMODULE += event_thread
 USEMODULE += event_thread_highest
 
 ifneq (,$(filter netdev,$(USEMODULE)))
-  USEMODULE += netdev_ieee802154_submac
+  ifneq (,$(filter gnrc_gomach gnrc_lwmac,$(USEMODULE)))
+    USEMODULE += netdev_ieee802154_submac
+  else
+    USEMODULE += gnrc_netif_ieee802154_mac
+  endif
   DEFAULT_MODULE += netdev_ieee802154_oqpsk
 endif
 
