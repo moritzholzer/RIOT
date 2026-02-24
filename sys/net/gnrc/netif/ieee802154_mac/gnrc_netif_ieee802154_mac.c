@@ -65,7 +65,6 @@ static ieee802154_dev_type_t _dev_type_cfg = IEEE802154_DEV_TYPE_INVALID;
 static gnrc_netif_ieee802154_mac_radio_init_cb_t _radio_init_cb;
 static void *_radio_init_arg;
 static unsigned _radio_init_idx;
-mutex_t assoc_lock;
 static int _netdev_init(netdev_t *dev);
 static int _netdev_send(netdev_t *dev, const iolist_t *iolist);
 static int _netdev_recv(netdev_t *dev, void *buf, size_t len, void *info);
@@ -246,23 +245,9 @@ static void _ev_assoc_res_handler(event_t *event)
 {
     gnrc_netif_ieee802154_mac_dev_t *dev =
         container_of(event, gnrc_netif_ieee802154_mac_dev_t, ev_assoc_res);
-    mutex_lock(&assoc_lock);
     if (!dev->assoc_res_pending) {
         return;
     }
-#if IS_USED(MODULE_SHELL_CMD_IWPAN)
-    char addr_str[3 * IEEE802154_LONG_ADDRESS_LEN];
-    if (dev->assoc_res_dst.type == IEEE802154_ADDR_MODE_SHORT) {
-        snprintf(addr_str, sizeof(addr_str), "0x%04x", dev->assoc_res_short_addr);
-    }
-    else {
-        l2util_addr_to_str(dev->assoc_res_dst.v.ext_addr.uint8,
-                           IEEE802154_LONG_ADDRESS_LEN, addr_str);
-    }
-    printf("ASSOC indication from %s, status=%u\n",
-           addr_str, (unsigned)dev->assoc_res_status);
-#endif
-
     dev->assoc_res_pending = false;
     int res = ieee802154_mac_mlme_associate_response(&dev->mac,
                                                      &dev->assoc_res_dst,
@@ -280,7 +265,6 @@ static void _ev_assoc_res_handler(event_t *event)
     if (res < 0) {
         DEBUG("IEEE802154 MAC: auto-assoc response failed (%d)\n", res);
     }
-    mutex_unlock(&assoc_lock);
 }
 
 static void _ev_bh_request_handler(event_t *event)
@@ -400,12 +384,23 @@ static void _mac_associate_indication(void *arg, const uint8_t *device_addr,
         status = IEEE802154_ASSOC_STATUS_PAN_ACCESS_DENIED;
         return;
     }
-    mutex_lock(&assoc_lock);
+
     dev->assoc_res_dst = dst_addr;
     dev->assoc_res_status = status;
     dev->assoc_res_short_addr = short_addr;
     dev->assoc_res_pending = true;
-    mutex_unlock(&assoc_lock);
+#if IS_USED(MODULE_SHELL_CMD_IWPAN)
+    char addr_str[3 * IEEE802154_LONG_ADDRESS_LEN];
+    if (dst_addr.type == IEEE802154_ADDR_MODE_SHORT) {
+        snprintf(addr_str, sizeof(addr_str), "0x%04x", short_addr);
+    }
+    else {
+        l2util_addr_to_str(dst_addr.v.ext_addr.uint8,
+                           IEEE802154_LONG_ADDRESS_LEN, addr_str);
+    }
+    printf("ASSOC indication from %s, status=%u\n",
+           addr_str, (unsigned)status);
+#endif
     event_post(&dev->netif->evq[GNRC_NETIF_EVQ_INDEX_PRIO_HIGH], &dev->ev_assoc_res);
 }
 
@@ -748,7 +743,6 @@ static int _netdev_init(netdev_t *dev)
     netdev_register(dev, _netdev_type_from_devtype(_dev_type_cfg), 0);
     dev->driver = &_netdev_driver;
 
-    mutex_init(&assoc_lock);
     mutex_init(&mdev->rx_lock);
     mutex_init(&mdev->tx_lock);
     memset(mdev->rxq, 0, sizeof(mdev->rxq));
