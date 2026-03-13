@@ -29,6 +29,10 @@ void ieee802154_mac_mlme_set_request(ieee802154_mac_t *mac,
                                      ieee802154_pib_attr_t attr,
                                      const ieee802154_pib_value_t *in)
 {
+    if (!mac || !in) {
+        return;
+    }
+
     ieee802154_mac_mlme_set(mac, attr, in);
     if (attr == IEEE802154_PIB_PAN_ID) {
         ieee802154_set_panid(&mac->submac, &in->v.u16);
@@ -46,6 +50,10 @@ void ieee802154_mac_mlme_get_request(ieee802154_mac_t *mac,
                                      ieee802154_pib_attr_t attr,
                                      ieee802154_pib_value_t *out)
 {
+    if (!mac || !out) {
+        return;
+    }
+
     ieee802154_mac_mlme_get(mac, attr, out);
 }
 
@@ -59,6 +67,10 @@ void ieee802154_mac_init_with_devtype(ieee802154_mac_t *mac,
                                       const ieee802154_mac_cbs_t *cbs,
                                       ieee802154_dev_type_t dev_type)
 {
+    if (!mac || !cbs) {
+        return;
+    }
+
     puts("init\n");
     /* Preserve radio HAL descriptor initialized by radio init callback */
     ieee802154_dev_t hal_dev = mac->submac.dev;
@@ -75,6 +87,9 @@ int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type
                                      ieee802154_mlme_scan_req_t *req)
 {
     (void) type;
+    if (!mac) {
+        return -EINVAL;
+    }
     if (mac->scan_active) {
         return -EBUSY;
     }
@@ -101,6 +116,10 @@ int ieee802154_mac_mlme_scan_request(ieee802154_mac_t *mac, ieee802154_scan_type
 int ieee802154_mlme_start_request(ieee802154_mac_t *mac,
                                   uint16_t channel)
 {
+    if (!mac) {
+        return -EINVAL;
+    }
+
     int res = ieee802154_set_channel_number(&mac->submac, channel);
     if (res < 0) {
         DEBUG("IEEE802154 MAC: failed to set coordinator channel %u\n", channel);
@@ -247,7 +266,7 @@ int ieee802154_mac_mlme_associate_response(ieee802154_mac_t *mac,
 int ieee802154_mac_mlme_poll(ieee802154_mac_t *mac, ieee802154_addr_mode_t coord_mode,
                              uint16_t coord_panid, const void *coord_addr)
 {
-    if (!mac) {
+    if (!mac || !coord_addr) {
         return -EINVAL;
     }
 

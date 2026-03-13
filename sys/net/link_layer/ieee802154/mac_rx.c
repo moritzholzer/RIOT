@@ -164,8 +164,9 @@ void ieee802154_mac_rx_process(ieee802154_mac_t *mac, iolist_t *buf)
         (void)ieee802154_mac_fsm_process_ev_ctx(mac, ev, &ctx);
     }
     /* Free RX buffers for frames handled entirely inside MAC.
-     * DATA frames are freed by data_indication callback. */
-    if (frame_type != IEEE802154_FCF_TYPE_DATA || !mac->cbs.data_indication) {
+     * DATA frames are normally freed by data_indication callback, except while scanning
+     * where data frames are ignored by FSM and must be freed here. */
+    if (frame_type != IEEE802154_FCF_TYPE_DATA || !mac->cbs.data_indication || mac->scan_active) {
         if (mac->cbs.dealloc_request) {
             mac->cbs.dealloc_request(mac, buf);
         }

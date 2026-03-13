@@ -4,6 +4,7 @@
  */
 
 #include <string.h>
+#include <assert.h>
 
 #include "mutex.h"
 #include "byteorder.h"
@@ -55,13 +56,11 @@ static const char *const _mac_fsm_ev_str[] = {
     [IEEE802154_MAC_FSM_EV_SCAN_START] = "SCAN_START",
     [IEEE802154_MAC_FSM_EV_SCAN_TIMER] = "SCAN_TIMER",
     [IEEE802154_MAC_FSM_EV_SCAN_DONE] = "SCAN_DONE",
-    [IEEE802154_MAC_FSM_EV_ASSOC_REQ_RX] = "ASSOC_REQ_RX",
-    [IEEE802154_MAC_FSM_EV_ASSOC_RES_RX] = "ASSOC_RES_RX",
-    [IEEE802154_MAC_FSM_EV_DISASSOC_RX] = "DISASSOC_RX",
     [IEEE802154_MAC_FSM_EV_COORD_START] = "COORD_START",
     [IEEE802154_MAC_FSM_EV_MLME_ASSOC_REQ] = "MLME_ASSOC_REQ",
     [IEEE802154_MAC_FSM_EV_MLME_POLL] = "MLME_POLL",
     [IEEE802154_MAC_FSM_EV_MLME_ASSOC_RES] = "MLME_ASSOC_RES",
+    [IEEE802154_MAC_FSM_EV_MLME_DISASSOC_REQ] = "MLME_DISASSOC_REQ",
     [IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT] = "ASSOC_TIMEOUT",
     [IEEE802154_MAC_FSM_EV_TX_REQUEST] = "TX_REQUEST",
     [IEEE802154_MAC_FSM_EV_SLEEP] = "SLEEP",
@@ -91,9 +90,10 @@ static int _mac_enqueue_and_tx(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
                                iolist_t *msdu, const uint8_t *msdu_handle,
                                bool ack_req, bool indirect)
 {
-    if (!ctx || !ctx->result || !ctx->data_dst_addr) {
-        return -EINVAL;
-    }
+    assert(mac);
+    assert(ctx);
+    assert(ctx->result);
+    assert(ctx->data_dst_addr);
 
     int res = ieee802154_mac_map_push(mac, frame_type,
                                       src_mode, ctx->dst_mode,
@@ -115,6 +115,9 @@ static int _mac_enqueue_and_tx(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
 
 static int _mac_data_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
 {
+    assert(mac);
+    assert(ctx);
+
     int res = _mac_enqueue_and_tx(mac, ctx, ctx->src_mode, IEEE802154_FCF_TYPE_DATA,
                                   ctx->msdu, &ctx->msdu_handle, ctx->ack_req, ctx->indirect);
     if ((res >= 0) && ctx->indirect && mac->is_coordinator) {
@@ -126,9 +129,9 @@ static int _mac_data_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx
 
 static int _mac_assoc_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
 {
-    if (!ctx || !ctx->result) {
-        return -EINVAL;
-    }
+    assert(mac);
+    assert(ctx);
+    assert(ctx->result);
 
     uint8_t *buf = (uint8_t *)mac->cmd.iol_base;
     buf[0] = IEEE802154_CMD_ASSOCIATION_REQ;
@@ -166,6 +169,9 @@ static int _mac_assoc_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ct
 
 static int _mac_poll_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
 {
+    assert(mac);
+    assert(ctx);
+
     uint8_t *buf = (uint8_t *)mac->cmd.iol_base;
     buf[0] = IEEE802154_CMD_DATA_REQ;
     mac->cmd.iol_len = 1;
@@ -182,9 +188,10 @@ static int _mac_poll_request(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx
 
 static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
 {
-    if (!ctx || !ctx->result || !ctx->data_dst_addr) {
-        return -EINVAL;
-    }
+    assert(mac);
+    assert(ctx);
+    assert(ctx->result);
+    assert(ctx->data_dst_addr);
 
     uint8_t *buf = (uint8_t *)mac->cmd.iol_base;
     buf[0] = IEEE802154_CMD_ASSOCIATION_RES;
@@ -210,9 +217,8 @@ static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
 
 static void _debug_data_req(ieee802154_mac_t *mac, const ieee802154_mac_fsm_ctx_t *ctx)
 {
-    if (!mac || !ctx) {
-        return;
-    }
+    assert(mac);
+    assert(ctx);
 
     ieee802154_filter_mode_t mode;
     int res = ieee802154_radio_get_frame_filter_mode(&mac->submac.dev, &mode);
@@ -241,7 +247,6 @@ static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     case IEEE802154_MAC_FSM_EV_COORD_START:
         return IEEE802154_MAC_STATE_COORDINATOR;
-    case IEEE802154_MAC_FSM_EV_ASSOC_RES_RX:
     case IEEE802154_MAC_FSM_EV_MLME_ASSOC_REQ:
         if (ctx) {
             (void)_mac_assoc_request(mac, ctx);
@@ -278,12 +283,16 @@ static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
             (void)_mac_tx_request(mac, ctx->src_mode, src_addr);
         }
         return IEEE802154_MAC_STATE_IDLE;
-    case IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ:
-        return IEEE802154_MAC_STATE_IDLE;
     case IEEE802154_MAC_FSM_EV_MCPS_DATA_REQ:
         if (ctx) {
             (void)_mac_data_request(mac, ctx);
         }
+        return IEEE802154_MAC_STATE_IDLE;
+    case IEEE802154_MAC_FSM_EV_RX_BEACON:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_REQ:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ:
         return IEEE802154_MAC_STATE_IDLE;
     default:
         return IEEE802154_MAC_STATE_INVALID;
@@ -381,20 +390,11 @@ static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
         }
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
-        if (ctx && mac->cbs.data_indication) {
-            mac->cbs.data_indication(mac->cbs.mac, ctx->buf, ctx->info);
-        }
-        return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
-        if (ctx) {
-            _debug_data_req(mac, ctx);
-            const void *src_addr = (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT)
-                                    ? (const void *)ctx->src
-                                    : (const void *)&ctx->src_addr;
-            ztimer_sleep(ZTIMER_USEC,
-                         (uint32_t)IEEE802154_SIFS_SYMS * (uint32_t)mac->sym_us);
-            (void)_mac_tx_request(mac, ctx->src_mode, src_addr);
-        }
+    case IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_REQ:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC:
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     default:
         return IEEE802154_MAC_STATE_INVALID;
@@ -416,9 +416,6 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
         if (mac->cbs.rx_request) {
             mac->cbs.rx_request(mac);
         }
-        return IEEE802154_MAC_STATE_COORDINATOR;
-    case IEEE802154_MAC_FSM_EV_DISASSOC_RX:
-    case IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC:
         return IEEE802154_MAC_STATE_COORDINATOR;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
         if (ctx && mac->cbs.data_indication) {
@@ -464,8 +461,16 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
             (void)_mac_assoc_response(mac, ctx);
         }
         return IEEE802154_MAC_STATE_COORDINATOR;
+    case IEEE802154_MAC_FSM_EV_MLME_DISASSOC_REQ:
+            // TODO:
+        return IEEE802154_MAC_STATE_COORDINATOR;
     case IEEE802154_MAC_FSM_EV_SLEEP:
         return IEEE802154_MAC_STATE_SLEEP;
+    case IEEE802154_MAC_FSM_EV_RX_BEACON:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC:
+        // TODO:
+        return IEEE802154_MAC_STATE_COORDINATOR;
     default:
         return IEEE802154_MAC_STATE_INVALID;
     }
@@ -476,8 +481,8 @@ static ieee802154_mac_state_t _mac_fsm_state_device(ieee802154_mac_t *mac,
                                                     const ieee802154_mac_fsm_ctx_t *ctx)
 {
     switch (ev) {
-    case IEEE802154_MAC_FSM_EV_DISASSOC_RX:
     case IEEE802154_MAC_FSM_EV_RX_CMD_DISASSOC:
+    case IEEE802154_MAC_FSM_EV_MLME_DISASSOC_REQ:
         mac->assoc_pending = false;
         return IEEE802154_MAC_STATE_IDLE;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
@@ -505,6 +510,12 @@ static ieee802154_mac_state_t _mac_fsm_state_device(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_DEVICE;
     case IEEE802154_MAC_FSM_EV_SLEEP:
         return IEEE802154_MAC_STATE_SLEEP;
+    case IEEE802154_MAC_FSM_EV_RX_BEACON:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_BEACON_REQ:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_REQ:
+    case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES:
+        return IEEE802154_MAC_STATE_DEVICE;
     default:
         return IEEE802154_MAC_STATE_INVALID;
     }
@@ -600,6 +611,8 @@ static ieee802154_mac_state_t _mac_fsm_state_sleep(ieee802154_mac_t *mac,
 static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev,
                                const ieee802154_mac_fsm_ctx_t *ctx)
 {
+    assert(mac);
+
     ieee802154_mac_state_t new_state;
 
     if (ev == IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_RES) {
@@ -648,7 +661,7 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
             st_str = "UNKNOWN";
         }
         DEBUG("IEEE802154 MAC: invalid FSM event %s in state %s\n", ev_str, st_str);
-        return -EINVAL;
+        return -EBUSY;
     }
 
     const char *ev_str = (ev < (sizeof(_mac_fsm_ev_str) / sizeof(_mac_fsm_ev_str[0])))
@@ -747,6 +760,8 @@ int ieee802154_mac_tx(ieee802154_mac_t *mac, const ieee802154_ext_addr_t *dst_ad
 
 static int _mac_enqueue_beacon(ieee802154_mac_t *mac)
 {
+    assert(mac);
+
     ieee802154_pib_value_t value;
     ieee802154_mac_mlme_get(mac, IEEE802154_PIB_BEACON_PAYLOAD, &value);
     mac->cmd.iol_base = (void *)value.v.bytes.ptr;
@@ -763,6 +778,8 @@ static int _mac_enqueue_beacon(ieee802154_mac_t *mac)
 static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mode,
                            const void *dst_addr)
 {
+    assert(mac);
+
     int slot = ieee802154_mac_indirectq_search_slot(mac, dst_mode, dst_addr);
 
     if (slot < 0) {
@@ -781,6 +798,7 @@ static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mod
     }
 
     ieee802154_mac_tx_desc_t *d = ieee802154_mac_tx_peek(txq);
+    assert(d);
     mac->indirect_q.current_slot = slot;
     mac->indirect_q.current_txq = txq;
     d->tx_state = IEEE802154_TX_STATE_IN_PROGRESS;

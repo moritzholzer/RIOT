@@ -4,6 +4,7 @@
  */
 
 #include <string.h>
+#include <assert.h>
 
 #include "mac_internal_priv.h"
 #include "mac_pib.h"
@@ -219,6 +220,10 @@ static int _enqueue_data_tx(ieee802154_mac_t *mac,
                             bool ack_req,
                             bool indirect)
 {
+    assert(mac);
+    assert(txq);
+    assert(msdu_handle);
+
     ieee802154_mac_tx_desc_t *dsc = ieee802154_mac_tx_reserve(txq);
     if (!dsc) {
         return -ENOBUFS;
@@ -302,6 +307,8 @@ static int _indirectq_search_slot_locked(ieee802154_mac_t *mac,
                                          ieee802154_addr_mode_t dst_mode,
                                          const void *dst_addr)
 {
+    assert(mac);
+
     ieee802154_mac_indirect_q_t *indirect_q = &mac->indirect_q;
     if (!dst_addr) {
         for (int i = 0; i < IEEE802154_MAC_TX_INDIRECTQ_SIZE; i++) {
@@ -362,6 +369,8 @@ static int _indirectq_get_slot_locked(ieee802154_mac_t *mac,
                                       ieee802154_addr_mode_t dst_mode,
                                       const void *dst_addr)
 {
+    assert(mac);
+
     int slot = _indirectq_search_slot_locked(mac, dst_mode, dst_addr);
     ieee802154_mac_indirect_q_t *indirect_q = &mac->indirect_q;
 
