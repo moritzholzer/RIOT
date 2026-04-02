@@ -28,6 +28,7 @@ extern "C" {
 #include "net/ieee802154/mac.h"
 #include "net/netdev.h"
 #include "iolist.h"
+#include "net/l2scan_list.h"
 
 /**
  * @brief   RX buffer count for GNRC IEEE 802.15.4 MAC adapter
@@ -58,6 +59,32 @@ typedef struct {
     ieee802154_rx_info_t info;
 } gnrc_netif_ieee802154_mac_rx_entry_t;
 
+typedef struct {
+    netopt_scan_result_t base;
+    uint16_t pan_id;
+    ieee802154_addr_t coord_addr;
+    uint8_t lqi;
+    const uint8_t *beacon_payload;
+    size_t beacon_payload_len;
+} gnrc_netif_ieee802154_mac_scan_result_t;
+
+typedef struct {
+    list_node_t node;
+    gnrc_netif_ieee802154_mac_scan_result_t result;
+} gnrc_netif_ieee802154_mac_scan_list_node_t;
+
+typedef l2scan_list_t gnrc_netif_ieee802154_mac_scan_list_t;
+
+typedef struct {
+    netopt_scan_request_t base;
+    ieee802154_scan_type_t type;
+    uint32_t duration_us;
+    uint16_t *channels;
+    uint8_t channel_count;
+    ieee802154_scan_result_t *results;
+    size_t results_len;
+    size_t *results_used;
+} gnrc_netif_ieee802154_mac_scan_request_t;
 /**
  * @brief   Device structure for gnrc_netif_ieee802154_mac
  */
@@ -72,7 +99,7 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
     uint8_t rxq_tail;
     uint8_t rxq_len;
     gnrc_netif_ieee802154_mac_rx_entry_t rxq[GNRC_NETIF_IEEE802154_MAC_RX_BUF_NUM];
-    
+
     mutex_t tx_lock;
     bool tx_done;
     int last_tx_status;
@@ -105,6 +132,12 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
 
     uint8_t beacon_payload[IEEE802154_SCAN_BEACON_PAYLOAD_MAX];
     size_t beacon_payload_len;
+
+    netopt_on_scan_result_t scan_cb;
+    gnrc_netif_ieee802154_mac_scan_request_t scan_req;
+    bool scan_in_progress;
+    gnrc_netif_ieee802154_mac_scan_list_t scan_list;
+    gnrc_netif_ieee802154_mac_scan_list_node_t scan_nodes[GNRC_NETIF_IEEE802154_MAC_SCAN_MAX_CH];
 } gnrc_netif_ieee802154_mac_dev_t;
 
 /**
