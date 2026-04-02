@@ -203,6 +203,64 @@ static gnrc_netif_ieee802154_mac_rx_entry_t _rxq_pop(gnrc_netif_ieee802154_mac_d
     return entry;
 }
 
+static bool _is_subghz_channel(uint16_t ch)
+{
+    return ch <= IEEE802154_CHANNEL_MAX_SUBGHZ;
+}
+
+static bool _is_24ghz_channel(uint16_t ch)
+{
+    return (ch >= IEEE802154_CHANNEL_MIN) &&
+           (ch <= IEEE802154_CHANNEL_MAX);
+}
+
+static size_t _scan_expand_channels_from_current(gnrc_netif_ieee802154_mac_dev_t *dev,
+                                                 uint16_t *out, size_t max)
+{
+    size_t n = 0;
+    uint16_t ch = dev->mac.submac.channel_num;
+
+    if (_is_subghz_channel(ch)) {
+        for (uint16_t c = IEEE802154_CHANNEL_MIN_SUBGHZ;
+             c <= IEEE802154_CHANNEL_MAX_SUBGHZ; c++) {
+            if (n >= max) {
+                return n;
+            }
+            out[n++] = c;
+        }
+        return n;
+    }
+
+    if (_is_24ghz_channel(ch)) {
+        for (uint16_t c = IEEE802154_CHANNEL_MIN;
+             c <= IEEE802154_CHANNEL_MAX; c++) {
+            if (n >= max) {
+                return n;
+            }
+            out[n++] = c;
+        }
+        return n;
+    }
+
+    for (uint16_t c = IEEE802154_CHANNEL_MIN_SUBGHZ;
+         c <= IEEE802154_CHANNEL_MAX_SUBGHZ; c++) {
+        if (n >= max) {
+            return n;
+        }
+        out[n++] = c;
+    }
+
+    for (uint16_t c = IEEE802154_CHANNEL_MIN;
+         c <= IEEE802154_CHANNEL_MAX; c++) {
+        if (n >= max) {
+            return n;
+        }
+        out[n++] = c;
+    }
+
+    return n;
+}
+
 static void _ev_alloc_handler(event_t *event)
 {
     gnrc_netif_ieee802154_mac_dev_t *dev =
@@ -728,20 +786,20 @@ static int _send(gnrc_netif_t *netif, gnrc_pktsnip_t *pkt)
     return (int)payload_len;
 }
 
-static void _poll_start(gnrc_netif_ieee802154_mac_dev_t *dev)
-{
-    ztimer_remove(ZTIMER_MSEC, &dev->poll_timer);
+//static void _poll_start(gnrc_netif_ieee802154_mac_dev_t *dev)
+//{
+  //  ztimer_remove(ZTIMER_MSEC, &dev->poll_timer);
 
-    if ((dev->poll_interval_ms > 0) &&
-        (dev->mac.state == IEEE802154_MAC_STATE_DEVICE)) {
-        ztimer_set(ZTIMER_MSEC, &dev->poll_timer, dev->poll_interval_ms);
-    }
-}
+    //if ((dev->poll_interval_ms > 0) &&
+      //  (dev->mac.state == IEEE802154_MAC_STATE_DEVICE)) {
+        //ztimer_set(ZTIMER_MSEC, &dev->poll_timer, dev->poll_interval_ms);
+    //}
+//}
 
-static void _poll_stop(gnrc_netif_ieee802154_mac_dev_t *dev)
-{
-    ztimer_remove(ZTIMER_MSEC, &dev->poll_timer);
-}
+//static void _poll_stop(gnrc_netif_ieee802154_mac_dev_t *dev)
+//{
+ //   ztimer_remove(ZTIMER_MSEC, &dev->poll_timer);
+//}
 
 static int _netdev_init(netdev_t *dev)
 {
@@ -767,8 +825,12 @@ static int _netdev_init(netdev_t *dev)
     mdev->ev_bh_request.handler = _ev_bh_request_handler;
     mdev->ev_radio.handler = _ev_radio_handler;
     mdev->ev_poll.handler = _ev_poll_handler;
+    mdev->scan_cb = NULL;
+    mdev->scan_in_progress = false;
+    mdev->scan_all_ch_count = 0;
+    mdev->scan_list.head.next = NULL;
 
-    if (_radio_init_cb) {
+    if (_radio_init_cb)     {
         int res = _radio_init_cb(&mdev->mac.submac.dev, _dev_type_cfg,
                                  _radio_init_idx++, _radio_init_arg);
         if (res < 0) {
@@ -1018,51 +1080,68 @@ static int _netdev_set(netdev_t *dev, netopt_t opt, const void *value, size_t le
         }
         case NETOPT_SCAN: {
             const gnrc_netif_ieee802154_mac_scan_request_t *req = value;
-            ieee802154_mlme_scan_req_t mac_req;
+            ieee802154_mlme_scan_req_t *scan_req = &mdev->scan_req;
 
-            assert(len == sizeof(*req));
-
+            if (len != sizeof(*req)) {
+                return -EINVAL;
+            }
+            if (req == NULL || req->results == NULL || req->results_used == NULL) {
+                return -EINVAL;
+            }
             if (mdev->scan_in_progress) {
                 return -EBUSY;
             }
 
-            memset(&mac_req, 0, sizeof(mac_req));
+            memset(scan_req, 0, sizeof(*scan_req));
 
-            if ((req->channels == NULL) || (req->channel_count == 0)) {
-                /** TODO: implement all channel scan*/
-                if (req->base.channel == NETOPT_SCAN_REQ_ALL_CH) {
-                    return -ENOTSUP;
+            *req->results_used = 0;
+            memset(req->results, 0, req->results_len * sizeof(req->results[0]));
+
+            if ((req->channels != NULL) && (req->channel_count > 0)) {
+                scan_req->channels = req->channels;
+                scan_req->channel_count = req->channel_count;
+            }
+            else if (req->base.channel == NETOPT_SCAN_REQ_ALL_CH) {
+                mdev->scan_all_ch_count = _scan_expand_channels_from_current(
+                    mdev,
+                    mdev->scan_all_channels,
+                    sizeof(mdev->scan_all_channels) / sizeof(mdev->scan_all_channels[0]));
+
+                if (mdev->scan_all_ch_count == 0) {
+                    return -EINVAL;
                 }
 
-                mdev->_scan_channels_buf[0] = req->base.channel;
-                mac_req.channels = mdev->_scan_channels_buf;
-                mac_req.channel_count = 1;
+                scan_req->channels = mdev->scan_all_channels;
+                scan_req->channel_count = mdev->scan_all_ch_count;
             }
             else {
-                mac_req.channels = req->channels;
-                mac_req.channel_count = req->channel_count;
+                mdev->scan_all_channels[0] = req->base.channel;
+                mdev->scan_all_ch_count = 1;
+                scan_req->channels = mdev->scan_all_channels;
+                scan_req->channel_count = 1;
             }
 
-            mac_req.results = req->results;
-            mac_req.results_len = req->results_len;
-            mac_req.results_used = req->results_used;
-            mac_req.duration = req->duration_us;
+            scan_req->results = req->results;
+            scan_req->results_len = req->results_len;
+            scan_req->results_used = req->results_used;
+            scan_req->duration = req->duration_us;
 
             mdev->scan_cb = req->base.scan_cb;
-            mdev->scan_req = *req;
             mdev->scan_in_progress = true;
 
-            res = ieee802154_mac_mlme_scan_request(&mdev->mac, req->type, &mac_req);
+            res = ieee802154_mac_mlme_scan_request(&mdev->mac, req->type, scan_req);
             if (res < 0) {
                 mdev->scan_in_progress = false;
                 mdev->scan_cb = NULL;
+                memset(scan_req, 0, sizeof(*scan_req));
+                return res;
             }
-            break;
+
+            return sizeof(*req);
         }
         default:
             break;
     }
-
     return res;
 }
 

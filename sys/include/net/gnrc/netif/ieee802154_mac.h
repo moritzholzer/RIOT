@@ -44,6 +44,11 @@ extern "C" {
 #define GNRC_NETIF_IEEE802154_MAC_TX_BUF_NUM   (IEEE802154_MAC_TXQ_LEN)
 #endif
 
+#define GNRC_NETIF_IEEE802154_MAC_SCAN_ALL_CHANNELS_LEN \
+    ((IEEE802154_CHANNEL_MAX_SUBGHZ - IEEE802154_CHANNEL_MIN_SUBGHZ + 1) + \
+     (IEEE802154_CHANNEL_MAX - IEEE802154_CHANNEL_MIN + 1))
+
+
 /**
  * @brief   Scan channel list size for GNRC IEEE 802.15.4 MAC adapter
  */
@@ -133,11 +138,15 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
     uint8_t beacon_payload[IEEE802154_SCAN_BEACON_PAYLOAD_MAX];
     size_t beacon_payload_len;
 
+    ieee802154_mlme_scan_req_t scan_req;
     netopt_on_scan_result_t scan_cb;
-    gnrc_netif_ieee802154_mac_scan_request_t scan_req;
     bool scan_in_progress;
     gnrc_netif_ieee802154_mac_scan_list_t scan_list;
-    gnrc_netif_ieee802154_mac_scan_list_node_t scan_nodes[GNRC_NETIF_IEEE802154_MAC_SCAN_MAX_CH];
+    gnrc_netif_ieee802154_mac_scan_list_node_t
+    scan_nodes[GNRC_NETIF_IEEE802154_MAC_SCAN_MAX_CH];
+    uint16_t scan_all_channels[GNRC_NETIF_IEEE802154_MAC_SCAN_ALL_CHANNELS_LEN];
+    uint8_t scan_all_ch_count;
+
 } gnrc_netif_ieee802154_mac_dev_t;
 
 /**
