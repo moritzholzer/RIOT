@@ -399,6 +399,7 @@ static int _iwpan(int argc, char **argv)
             unsigned long cap_val = strtoul(argv[6], NULL, 0);
             cap.u8 = (uint8_t)cap_val;
         }
+        printf("join: capability=0x%02x\n", cap.u8);
         int res = ieee802154_mac_mlme_associate_request(mac, &coord_addr,
                                                         channel, panid, cap);
         if (res < 0) {

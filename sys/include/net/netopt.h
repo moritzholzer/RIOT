@@ -882,6 +882,27 @@ typedef enum {
     NETOPT_GTS_TX,
 
     /**
+     * @brief (netopt_enable_t) Keep the tranceiver enabled when idle
+     *
+     */
+    NETOPT_RX_ON_WHEN_IDLE,
+
+    /**
+     * @brief (uint32_t) Sets the poll interval of indirect transmission IEEE802.15.4 MAC when associated
+     */
+    NETOPT_POLL_INTERVAL,
+
+    /**
+     *  @brief (byte array) The payload which gets sent in beacons.
+     */
+    NETOPT_BEACON_PAYLOAD,
+
+    /**
+     * @brief (ieee802154_assoc_status_t)
+     */
+    NETOPT_ASSOC_STATUS,
+
+    /**
      * @brief   maximum number of options defined here.
      *
      * @note    Interfaces are not meant to respond to this option
