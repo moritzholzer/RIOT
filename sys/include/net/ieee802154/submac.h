@@ -209,6 +209,7 @@ struct ieee802154_submac {
     const ieee802154_submac_cb_t *cb;   /**< pointer to the SubMAC callbacks */
     ieee802154_csma_be_t be;            /**< CSMA-CA backoff exponent params */
     bool wait_for_ack;                  /**< SubMAC is waiting for an ACK frame */
+    bool frame_pending;                 /**< wheter frame is pending */
     uint16_t ack_timeout_us;            /**< ACK timeout in µs */
     uint16_t csma_backoff_us;           /**< CSMA sender backoff period in µs */
     uint16_t panid;                     /**< IEEE 802.15.4 PAN ID */
@@ -622,7 +623,7 @@ static inline void ieee802154_submac_crc_error_cb(ieee802154_submac_t *submac)
     ieee802154_submac_process_ev(submac, IEEE802154_FSM_EV_CRC_ERROR);
 }
 
-/**
+/**ieee802154_radio_config_src_address_match
  * @brief Indicate the SubMAC that the device finished the transmission procedure.
  *
  * @param[in] submac pointer to the SubMAC descriptor
@@ -631,6 +632,17 @@ static inline void ieee802154_submac_tx_done_cb(ieee802154_submac_t *submac)
 {
     ieee802154_submac_process_ev(submac, IEEE802154_FSM_EV_TX_DONE);
 }
+
+/**
+ * @brief
+ *
+ * @param[in] submac pointer to the SubMAC descriptor
+ * @param[in] cmd command for the source address match configuration
+ * @param[in] value value associated to cmd.
+ *
+ * @param[out]
+ */
+int ieee802154_submac_config_src_address_match(ieee802154_submac_t *submac, ieee802154_src_match_t cmd, const void * value);
 
 #ifdef __cplusplus
 }
