@@ -90,6 +90,25 @@ typedef struct {
     size_t results_len;
     size_t *results_used;
 } gnrc_netif_ieee802154_mac_scan_request_t;
+
+typedef struct {
+    netopt_connect_request_t base;
+    uint16_t channel;
+    uint16_t panid;
+    ieee802154_addr_t coord_addr;
+    ieee802154_assoc_capability_t capability;
+} gnrc_netif_ieee802154_mac_connect_request_t;
+
+typedef struct {
+    uint16_t channel;
+} gnrc_netif_ieee802154_mac_start_request_t;
+
+typedef struct {
+    uint16_t panid;
+    ieee802154_addr_t coord_addr;
+    bool force_rx_on_when_idle;
+} gnrc_netif_ieee802154_mac_poll_request_t;
+
 /**
  * @brief   Device structure for gnrc_netif_ieee802154_mac
  */
@@ -126,6 +145,8 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
     uint32_t poll_interval_ms;
     bool tx_indirect;
 
+    bool radio_off;
+
     bool assoc_res_pending;
     ieee802154_addr_t assoc_res_dst;
     ieee802154_assoc_status_t assoc_res_status;
@@ -146,6 +167,16 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
     scan_nodes[GNRC_NETIF_IEEE802154_MAC_SCAN_MAX_CH];
     uint16_t scan_all_channels[GNRC_NETIF_IEEE802154_MAC_SCAN_ALL_CHANNELS_LEN];
     uint8_t scan_all_ch_count;
+
+    netopt_on_connect_result_t connect_cb;
+    bool connect_in_progress;
+    int connect_status;
+    uint16_t connect_short_addr;
+    uint16_t connect_panid;
+    ieee802154_addr_t connect_coord_addr;
+
+    int start_status;
+    bool start_in_progress;
 } gnrc_netif_ieee802154_mac_dev_t;
 
 /**

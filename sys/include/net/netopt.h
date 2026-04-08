@@ -890,6 +890,11 @@ typedef enum {
     /**
      * @brief (uint32_t) Sets the poll interval of indirect transmission IEEE802.15.4 MAC when associated
      */
+    NETOPT_POLL,
+
+    /**
+     * @brief (uint32_t) Sets the poll interval of indirect transmission IEEE802.15.4 MAC when associated
+     */
     NETOPT_POLL_INTERVAL,
 
     /**
@@ -901,6 +906,11 @@ typedef enum {
      * @brief (ieee802154_assoc_status_t)
      */
     NETOPT_ASSOC_STATUS,
+
+    /**
+     * @brief ()
+     */
+    NETOPT_START,
 
     /**
      * @brief   maximum number of options defined here.
