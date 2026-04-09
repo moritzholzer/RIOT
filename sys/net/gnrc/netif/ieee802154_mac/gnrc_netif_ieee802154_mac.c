@@ -38,13 +38,16 @@
 #include "net/gnrc/netapi.h"
 #include "net/gnrc/nettype.h"
 #include "net/gnrc/netif/dedup.h"
+#include "net/ieee802154.h"
+#ifdef MODULE_IEEE802154_SECURITY
+#include "net/ieee802154_security.h"
+#endif
 
 
 #include "net/ieee802154.h"
 #include "net/ieee802154/radio.h"
 #include "net/ieee802154/mac.h"
 #include "net/ieee802154/submac.h"
-#include "net/eui_provider.h"
 #include "net/eui_provider.h"
 
 #include "net/netopt.h"
@@ -749,7 +752,8 @@ static int _send(gnrc_netif_t *netif, gnrc_pktsnip_t *pkt)
     ieee802154_pib_value_t panid;
     ieee802154_mac_mlme_get_request(&dev->mac, IEEE802154_PIB_PAN_ID, &panid);
 
-    bool ack_req = !(netif_hdr->flags &
+    bool ack_req = dev->ack_req &&
+                   !(netif_hdr->flags &
                      (GNRC_NETIF_HDR_FLAGS_BROADCAST | GNRC_NETIF_HDR_FLAGS_MULTICAST));
 
     payload_len = gnrc_pkt_len(pkt->next);
@@ -803,6 +807,7 @@ static int _netdev_init(netdev_t *dev)
     mdev->tx_done = false;
     mdev->last_tx_status = 0;
     mdev->rx_alloc_len = 0;
+    mdev->ack_req = true;
 
     mdev->ev_alloc.handler = _ev_alloc_handler;
     mdev->ev_rx.handler = _ev_rx_handler;
@@ -946,6 +951,17 @@ static int _netdev_get(netdev_t *dev, netopt_t opt, void *value, size_t max_len)
             res = sizeof(uint16_t);
             break;
         }
+        case NETOPT_ADDR_LEN: {
+            ieee802154_pib_value_t v;
+            ieee802154_mac_mlme_get_request(&mdev->mac, IEEE802154_PIB_SHORT_ADDR, &v);
+            uint16_t len = (byteorder_ntohs(v.v.short_addr) == 0xffff)
+                ? IEEE802154_LONG_ADDRESS_LEN
+                : IEEE802154_SHORT_ADDRESS_LEN;
+            assert(max_len == sizeof(uint16_t));
+            *((uint16_t *)value) = len;
+            res = sizeof(uint16_t);
+            break;
+        }
         case NETOPT_NID: {
             ieee802154_pib_value_t v;
             ieee802154_mac_mlme_get_request(&mdev->mac, IEEE802154_PIB_PAN_ID, &v);
@@ -1014,6 +1030,31 @@ static int _netdev_get(netdev_t *dev, netopt_t opt, void *value, size_t max_len)
             res = sizeof(uint32_t);
             break;
         }
+        case NETOPT_ACK_REQ: {
+            assert(max_len == sizeof(netopt_enable_t));
+            *((netopt_enable_t *)value) = mdev->ack_req ? NETOPT_ENABLE : NETOPT_DISABLE;
+            res = sizeof(netopt_enable_t);
+            break;
+        }
+        case NETOPT_RAWMODE: {
+            assert(max_len == sizeof(netopt_enable_t));
+            bool enabled = mdev->netif && (mdev->netif->flags & GNRC_NETIF_FLAGS_RAWMODE);
+            *((netopt_enable_t *)value) = enabled ? NETOPT_ENABLE : NETOPT_DISABLE;
+            res = sizeof(netopt_enable_t);
+            break;
+        }
+        case NETOPT_MAX_PDU_SIZE: {
+            assert(max_len >= sizeof(uint16_t));
+            uint16_t max_pdu = IEEE802154_FRAME_LEN_MAX
+                             - IEEE802154_MAX_HDR_LEN
+                             - IEEE802154_FCS_LEN;
+#ifdef MODULE_IEEE802154_SECURITY
+            max_pdu -= IEEE802154_SEC_MAX_AUX_HDR_LEN;
+#endif
+            *((uint16_t *)value) = max_pdu;
+            res = sizeof(uint16_t);
+            break;
+        }
         default:
             break;
     }
@@ -1080,6 +1121,54 @@ static int _netdev_set(netdev_t *dev, netopt_t opt, const void *value, size_t le
             mdev->tx_indirect = (*(const netopt_enable_t *)value == NETOPT_ENABLE);
             res = sizeof(netopt_enable_t);
             break;
+        case NETOPT_ACK_REQ:
+            if (len != sizeof(netopt_enable_t)) {
+                return -EOVERFLOW;
+            }
+            mdev->ack_req = (*(const netopt_enable_t *)value == NETOPT_ENABLE);
+            res = sizeof(netopt_enable_t);
+            break;
+        case NETOPT_RAWMODE:
+            if (len != sizeof(netopt_enable_t)) {
+                return -EOVERFLOW;
+            }
+            if (mdev->netif) {
+                if (*(const netopt_enable_t *)value == NETOPT_ENABLE) {
+                    mdev->netif->flags |= GNRC_NETIF_FLAGS_RAWMODE;
+                }
+                else {
+                    mdev->netif->flags &= ~GNRC_NETIF_FLAGS_RAWMODE;
+                }
+            }
+            res = sizeof(netopt_enable_t);
+            break;
+        case NETOPT_ADDR_LEN:
+        case NETOPT_SRC_LEN: {
+            if (len != sizeof(uint16_t)) {
+                return -EOVERFLOW;
+            }
+            uint16_t addr_len = *(const uint16_t *)value;
+            ieee802154_pib_value_t v = {
+                .type = IEEE802154_PIB_TYPE_NUI16,
+            };
+            if (addr_len == IEEE802154_LONG_ADDRESS_LEN) {
+                v.v.short_addr = byteorder_htons(0xffff);
+            }
+            else if (addr_len == IEEE802154_SHORT_ADDRESS_LEN) {
+                ieee802154_pib_value_t cur;
+                ieee802154_mac_mlme_get_request(&mdev->mac, IEEE802154_PIB_SHORT_ADDR, &cur);
+                v.v.short_addr = cur.v.short_addr;
+                if (byteorder_ntohs(v.v.short_addr) == 0xffff) {
+                    v.v.short_addr = byteorder_htons(0x0000);
+                }
+            }
+            else {
+                return -EAFNOSUPPORT;
+            }
+            ieee802154_mac_mlme_set_request(&mdev->mac, IEEE802154_PIB_SHORT_ADDR, &v);
+            res = sizeof(uint16_t);
+            break;
+        }
         case NETOPT_STATE: {
             assert(len == sizeof(netopt_state_t));
             netopt_state_t state = *((const netopt_state_t *)value);
