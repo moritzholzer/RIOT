@@ -177,6 +177,8 @@ typedef struct gnrc_netif_ieee802154_mac_dev {
 
     int start_status;
     bool start_in_progress;
+
+    bool ack_req;
 } gnrc_netif_ieee802154_mac_dev_t;
 
 /**
