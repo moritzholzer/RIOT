@@ -205,6 +205,9 @@ static int _mac_assoc_response(ieee802154_mac_t *mac, const ieee802154_mac_fsm_c
         src_mode = IEEE802154_ADDR_MODE_SHORT;
     }
 
+    DEBUG("IEEE802154 MAC: queue ASSOC_RES indirect dst_mode=%u short_addr=0x%04x status=%u\n",
+          (unsigned)ctx->dst_mode, ctx->assoc_short_addr, (unsigned)ctx->assoc_status);
+
     /* Association response should be sent indirectly after a data request */
     return _mac_enqueue_and_tx(mac, ctx, src_mode, IEEE802154_FCF_TYPE_MACCMD,
                                &mac->cmd, &handle, true, true);
@@ -411,6 +414,8 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
     case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_REQ:
         if (ctx && mac->cbs.mlme_associate_indication)
         {
+            DEBUG("IEEE802154 MAC: assoc_req src_mode=%u src_len=%d capability=0x%02x\n",
+                  (unsigned)ctx->src_mode, ctx->src_len, ctx->capability.u8);
             mac->cbs.mlme_associate_indication(mac->cbs.mac, ctx->src,
                                                (uint8_t)ctx->src_len,
                                                ctx->src_mode, ctx->capability);
@@ -692,12 +697,16 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
     {
         bool coord = true;
         ieee802154_pib_value_t pib_value;
-        ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &pib_value);
-        network_uint16_t short_addr;
-        eui_short_from_eui64(&pib_value.v.ext_addr, &short_addr);
-        pib_value.type = IEEE802154_PIB_TYPE_NUI16;
-        pib_value.v.short_addr = short_addr;
-        ieee802154_mac_mlme_set_request(mac, IEEE802154_PIB_SHORT_ADDR, &pib_value);
+        ieee802154_pib_value_t pib_short;
+        ieee802154_mac_mlme_get(mac, IEEE802154_PIB_SHORT_ADDR, &pib_short);
+        if (byteorder_ntohs(pib_short.v.short_addr) == 0xFFFFU) {
+            ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &pib_value);
+            network_uint16_t short_addr;
+            eui_short_from_eui64(&pib_value.v.ext_addr, &short_addr);
+            pib_value.type = IEEE802154_PIB_TYPE_NUI16;
+            pib_value.v.short_addr = short_addr;
+            ieee802154_mac_mlme_set_request(mac, IEEE802154_PIB_SHORT_ADDR, &pib_value);
+        }
         int res = ieee802154_radio_config_addr_filter(&mac->submac.dev, IEEE802154_AF_PAN_COORD,
                                                       (void *)&coord);
         if (res == -ENOTSUP) {
@@ -767,6 +776,9 @@ static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mod
 {
     int slot = ieee802154_mac_indirectq_search_slot(mac, dst_mode, dst_addr);
 
+    DEBUG("IEEE802154 MAC: tx_request lookup dst_mode=%u slot=%d busy=%d\n",
+          (unsigned)dst_mode, slot, mac->indirect_q.busy);
+
     if (slot < 0) {
         return 1;
     }
@@ -786,6 +798,8 @@ static int _mac_tx_request(ieee802154_mac_t *mac, ieee802154_addr_mode_t dst_mod
     mac->indirect_q.current_slot = slot;
     mac->indirect_q.current_txq = txq;
     d->tx_state = IEEE802154_TX_STATE_IN_PROGRESS;
+    DEBUG("IEEE802154 MAC: tx_request send slot=%d frame_type=%u indirect=%d ack=%d\n",
+          slot, d->type, d->indirect, d->ack);
     int r = ieee802154_send(&mac->submac, &d->iol_mhr);
     if (r != 0)
     {

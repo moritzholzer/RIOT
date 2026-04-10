@@ -429,7 +429,7 @@ PSEUDOMODULES += shell_cmd_gnrc_udp
 PSEUDOMODULES += shell_cmd_heap
 PSEUDOMODULES += shell_cmd_i2c_scan
 PSEUDOMODULES += shell_cmd_iw
-PSEUDOMODULES += shell_cmd_lwip_netif
+:x
 PSEUDOMODULES += shell_cmd_mci
 PSEUDOMODULES += shell_cmd_md5sum
 PSEUDOMODULES += shell_cmd_mtd
