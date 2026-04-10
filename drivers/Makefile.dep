@@ -4,12 +4,12 @@ ifneq (,$(filter adc%1c,$(USEMODULE)))
   USEMODULE += adcxx1c
 endif
 
-ifneq (,$(filter ads101%,$(USEMODULE)))
-  $(error "Module ads101x got renamed to ads1x1x.")
+ifneq (,$(filter ads101% ads111%,$(USEMODULE)))
+  USEMODULE += ads1x1x
 endif
 
-ifneq (,$(filter ads1x1%,$(USEMODULE)))
-  USEMODULE += ads1x1x
+ifneq (,$(filter amg88%,$(USEMODULE)))
+  USEMODULE += amg88xx
 endif
 
 ifneq (,$(filter apds99%,$(USEMODULE)))
