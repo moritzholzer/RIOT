@@ -997,7 +997,10 @@ int ieee802154_submac_config_src_address_match(ieee802154_submac_t *submac, ieee
         if (cmd != IEEE802154_SRC_MATCH_EN){
             return -ENOTSUP;
         }
-        submac->frame_pending = value;
+        if (value == NULL) {
+            return -EINVAL;
+        }
+        submac->frame_pending = *((const bool *)value);
     }
     return 0;
 }
