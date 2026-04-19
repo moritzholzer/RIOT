@@ -623,7 +623,7 @@ static inline void ieee802154_submac_crc_error_cb(ieee802154_submac_t *submac)
     ieee802154_submac_process_ev(submac, IEEE802154_FSM_EV_CRC_ERROR);
 }
 
-/**ieee802154_radio_config_src_address_match
+/**
  * @brief Indicate the SubMAC that the device finished the transmission procedure.
  *
  * @param[in] submac pointer to the SubMAC descriptor
@@ -634,7 +634,7 @@ static inline void ieee802154_submac_tx_done_cb(ieee802154_submac_t *submac)
 }
 
 /**
- * @brief
+ * @brief ieee802154_radio_config_src_address_match
  *
  * @param[in] submac pointer to the SubMAC descriptor
  * @param[in] cmd command for the source address match configuration
