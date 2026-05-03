@@ -21,6 +21,7 @@
 #include "net/sock/udp.h"
 #include "net/sock/util.h"
 #include "od.h"
+#include "random.h"
 #include "sema.h"
 #include "shell.h"
 #include "thread.h"
@@ -35,8 +36,9 @@
 #define CONFIG_URI_MAX      128
 #endif
 
-#define SLEEPY_AWAKE_TIMEOUT_MS          20U
-#define SLEEPY_ACTIVITY_GUARD_MS         50U
+#define SLEEPY_AWAKE_TIMEOUT_MS          10U
+#define SLEEPY_ACTIVE_WINDOW_MS          25U
+#define SLEEPY_ACTIVITY_GUARD_MS         SLEEPY_ACTIVE_WINDOW_MS
 #define SLEEPY_OFF_RETRY_DELAY_MS        10U
 #define SLEEPY_OFF_RETRIES               20U
 #define COAP_RESPONSE_WAIT_MS            (CONFIG_GCOAP_NON_TIMEOUT_MSEC + 1000U)
@@ -233,7 +235,6 @@ static ssize_t _ts_handler(coap_pkt_t *pdu, uint8_t *buf, size_t len,
     }
 
     memcpy(pdu->payload, payload, (size_t)plen);
-    _sleepy_note_activity(SLEEPY_ACTIVITY_GUARD_MS);
     ssize_t res = (ssize_t)(hdr_len + (size_t)plen);
     printf("coap: response prepared msg ID %u len=%d\n", msg_id, (int)res);
     return res;
@@ -248,6 +249,110 @@ static gcoap_listener_t _listener = {
     .resources_len = ARRAY_SIZE(_resources),
     .next = NULL,
 };
+
+static void _sleep_ms_jitter(uint32_t max_ms)
+{
+    if (max_ms == 0) {
+        return;
+    }
+
+    uint32_t delay_ms = random_uint32_range(0, max_ms + 1);
+    if (delay_ms > 0) {
+        ztimer_sleep(ZTIMER_MSEC, delay_ms);
+    }
+}
+
+static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
+                                uint32_t start_jitter_ms, uint32_t request_jitter_ms)
+{
+    sock_udp_ep_t remote;
+    char hostbuf[CONFIG_URI_MAX];
+    const char *path = NULL;
+
+    if (_uristr2remote(uri, &remote, &path, hostbuf, sizeof(hostbuf)) != 0) {
+        puts("coap: invalid URI");
+        return 1;
+    }
+
+    coap_req_ctx_t req_ctx;
+    tx_indirect_state_t tx_indirect;
+
+    sema_create(&req_ctx.done, 0);
+    if (indirect) {
+        int res = _tx_indirect_set(&tx_indirect, true);
+        if (res < 0) {
+            printf("coap: failed to enable indirect TX: %d\n", res);
+            sema_destroy(&req_ctx.done);
+            return 1;
+        }
+    }
+    else {
+        tx_indirect.valid = false;
+    }
+
+    _sleep_ms_jitter(start_jitter_ms);
+
+    for (unsigned i = 0; i < count; i++) {
+        uint8_t buf[CONFIG_GCOAP_PDU_BUF_SIZE];
+        coap_pkt_t pdu;
+        req_ctx.response = false;
+
+        int init_res = gcoap_req_init(&pdu, buf, sizeof(buf),
+                                      COAP_METHOD_GET, path);
+        if (init_res < 0) {
+            printf("coap: request init failed: %d\n", init_res);
+            continue;
+        }
+        ssize_t len = coap_opt_finish(&pdu, COAP_OPT_FINISH_NONE);
+        if (len < 0) {
+            printf("coap: request build failed: %d\n", (int)len);
+            continue;
+        }
+
+        req_ctx.seq = i + 1;
+        req_ctx.msg_id = coap_get_id(&pdu);
+        uint32_t start_us = ztimer_now(ZTIMER_USEC);
+        printf("coap: send seq=%u msg ID %u, %" PRIuSIZE " bytes\n",
+               req_ctx.seq, req_ctx.msg_id, (size_t)len);
+        ssize_t sent = gcoap_req_send(buf, len, &remote, NULL,
+                                      _resp_handler, &req_ctx,
+                                      GCOAP_SOCKET_TYPE_UDP);
+
+        if (sent <= 0) {
+            printf("coap: send failed seq=%u msg ID %u: %d, open requests: %u\n",
+                   req_ctx.seq, req_ctx.msg_id, (int)sent,
+                   (unsigned)gcoap_op_state());
+            if (indirect) {
+                printf("coap: aborting at seq=%u msg ID %u due to lower-layer backpressure\n",
+                       req_ctx.seq, req_ctx.msg_id);
+                break;
+            }
+            continue;
+        }
+
+        int wait_res = sema_wait_timed_ztimer(&req_ctx.done, ZTIMER_MSEC,
+                                              COAP_RESPONSE_WAIT_MS);
+        uint32_t end_us = ztimer_now(ZTIMER_USEC);
+        if (wait_res < 0) {
+            printf("coap: no callback before local wait timeout seq=%u msg ID %u\n",
+                   req_ctx.seq, req_ctx.msg_id);
+        }
+        else if (req_ctx.response) {
+            uint32_t rtt_us = end_us - start_us;
+            printf("%u,%" PRIu32 "\n", i + 1, rtt_us);
+        }
+        else {
+            printf("coap: no response seq=%u msg ID %u\n",
+                   req_ctx.seq, req_ctx.msg_id);
+        }
+
+        _sleep_ms_jitter(request_jitter_ms);
+    }
+
+    _tx_indirect_restore(&tx_indirect);
+    sema_destroy(&req_ctx.done);
+    return 0;
+}
 
 static int _cmd_coap(int argc, char **argv)
 {
@@ -285,93 +390,7 @@ static int _cmd_coap(int argc, char **argv)
         return 1;
     }
 
-    sock_udp_ep_t remote;
-    char hostbuf[CONFIG_URI_MAX];
-    const char *path = NULL;
-
-    if (_uristr2remote(uri, &remote, &path, hostbuf, sizeof(hostbuf)) != 0) {
-        puts("coap: invalid URI");
-        return 1;
-    }
-
-    coap_req_ctx_t req_ctx;
-    tx_indirect_state_t tx_indirect;
-
-    sema_create(&req_ctx.done, 0);
-    if (indirect) {
-        int res = _tx_indirect_set(&tx_indirect, true);
-        if (res < 0) {
-            printf("coap: failed to enable indirect TX: %d\n", res);
-            sema_destroy(&req_ctx.done);
-            return 1;
-        }
-    }
-    else {
-        tx_indirect.valid = false;
-    }
-
-    bool send_failure_diag_printed = false;
-    for (unsigned i = 0; i < count; i++) {
-        uint8_t buf[CONFIG_GCOAP_PDU_BUF_SIZE];
-        coap_pkt_t pdu;
-        req_ctx.response = false;
-
-        int init_res = gcoap_req_init(&pdu, buf, sizeof(buf),
-                                      COAP_METHOD_GET, path);
-        if (init_res < 0) {
-            printf("coap: request init failed: %d\n", init_res);
-            continue;
-        }
-        ssize_t len = coap_opt_finish(&pdu, COAP_OPT_FINISH_NONE);
-        if (len < 0) {
-            printf("coap: request build failed: %d\n", (int)len);
-            continue;
-        }
-
-        req_ctx.seq = i + 1;
-        req_ctx.msg_id = coap_get_id(&pdu);
-        uint32_t start_us = ztimer_now(ZTIMER_USEC);
-        printf("coap: send seq=%u msg ID %u, %" PRIuSIZE " bytes\n",
-               req_ctx.seq, req_ctx.msg_id, (size_t)len);
-        ssize_t sent = gcoap_req_send(buf, len, &remote, NULL,
-                                      _resp_handler, &req_ctx,
-                                      GCOAP_SOCKET_TYPE_UDP);
-
-        if (sent <= 0) {
-            printf("coap: send failed seq=%u msg ID %u: %d, open requests: %u\n",
-                   req_ctx.seq, req_ctx.msg_id, (int)sent,
-                   (unsigned)gcoap_op_state());
-            if (!send_failure_diag_printed) {
-                gnrc_pktbuf_stats();
-                send_failure_diag_printed = true;
-            }
-            continue;
-        }
-
-        int wait_res = sema_wait_timed_ztimer(&req_ctx.done, ZTIMER_MSEC,
-                                              COAP_RESPONSE_WAIT_MS);
-        uint32_t end_us = ztimer_now(ZTIMER_USEC);
-        if (wait_res < 0) {
-            printf("coap: no callback before local wait timeout seq=%u msg ID %u\n",
-                   req_ctx.seq, req_ctx.msg_id);
-        }
-        else if (req_ctx.response) {
-            uint32_t rtt_us = end_us - start_us;
-            printf("%u,%" PRIu32 "\n", i + 1, rtt_us);
-        }
-        else {
-            printf("coap: no response seq=%u msg ID %u\n",
-                   req_ctx.seq, req_ctx.msg_id);
-        }
-
-        if (delay_ms) {
-            ztimer_sleep(ZTIMER_MSEC, delay_ms);
-        }
-    }
-
-    _tx_indirect_restore(&tx_indirect);
-    sema_destroy(&req_ctx.done);
-    return 0;
+    return _run_coap_get_series(uri, count, indirect, 0, delay_ms);
 }
 
 static kernel_pid_t _sleepy_pid = KERNEL_PID_UNDEF;
@@ -379,6 +398,7 @@ static volatile bool _sleepy_run = false;
 static volatile uint32_t _sleepy_interval_ms = 0;
 static volatile kernel_pid_t _sleepy_if_pid = KERNEL_PID_UNDEF;
 static volatile uint32_t _sleepy_awake_until_ms = 0;
+static volatile uint32_t _sleepy_awake_started_ms = 0;
 static volatile bool _sleepy_poll_interval_valid = false;
 static volatile uint32_t _sleepy_poll_interval_ms = 0;
 static char _sleepy_stack[THREAD_STACKSIZE_DEFAULT];
@@ -473,7 +493,7 @@ static void _sleepy_restore_periodic_poll(kernel_pid_t pid)
 
 void _sleepy_note_activity(uint32_t duration_ms)
 {
-    uint32_t deadline = ztimer_now(ZTIMER_MSEC) + duration_ms;
+    uint32_t deadline = _sleepy_awake_started_ms + duration_ms;
     if ((int32_t)(deadline - _sleepy_awake_until_ms) > 0) {
         _sleepy_awake_until_ms = deadline;
     }
@@ -481,7 +501,8 @@ void _sleepy_note_activity(uint32_t duration_ms)
 
 static void _sleepy_wait_awake_window(uint32_t timeout_ms)
 {
-    _sleepy_note_activity(timeout_ms);
+    _sleepy_awake_started_ms = ztimer_now(ZTIMER_MSEC);
+    _sleepy_awake_until_ms = _sleepy_awake_started_ms + timeout_ms;
 
     while (_sleepy_run) {
         uint32_t now = ztimer_now(ZTIMER_MSEC);
@@ -642,8 +663,43 @@ static int _cmd_indirect(int argc, char **argv)
     return 0;
 }
 
+static int _cmd_measure_rtt(int argc, char **argv)
+{
+    if (argc < 5 || argc > 6) {
+        printf("usage: %s [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>\n",
+               argv[0]);
+        return 1;
+    }
+
+    int arg_idx = 1;
+    bool indirect = false;
+    if (strcmp(argv[arg_idx], "-i") == 0) {
+        indirect = true;
+        arg_idx++;
+    }
+
+    if ((argc - arg_idx) != 4) {
+        printf("usage: %s [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>\n",
+               argv[0]);
+        return 1;
+    }
+
+    const char *uri = argv[arg_idx++];
+    unsigned count = (unsigned)atoi(argv[arg_idx++]);
+    uint32_t start_jitter_ms = (uint32_t)strtoul(argv[arg_idx++], NULL, 10);
+    uint32_t request_jitter_ms = (uint32_t)strtoul(argv[arg_idx++], NULL, 10);
+
+    if (count == 0) {
+        count = 1;
+    }
+
+    return _run_coap_get_series(uri, count, indirect,
+                                start_jitter_ms, request_jitter_ms);
+}
+
 static const shell_command_t _commands[] = {
     { "coap", "coap get [-i] <coap://[addr]/path>", _cmd_coap },
+    { "measure_rtt", "measure_rtt [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>", _cmd_measure_rtt },
     { "duty", "duty <interval_ms> [iface_pid] | duty stop", _cmd_duty },
     { "indirect", "indirect on|off [iface_pid]", _cmd_indirect },
     { NULL, NULL, NULL }
