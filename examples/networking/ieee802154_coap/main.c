@@ -663,7 +663,7 @@ static int _cmd_indirect(int argc, char **argv)
     return 0;
 }
 
-static int _cmd_measure_rtt(int argc, char **argv)
+static int _cmd_rtt(int argc, char **argv)
 {
     if (argc < 5 || argc > 6) {
         printf("usage: %s [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>\n",
@@ -693,13 +693,15 @@ static int _cmd_measure_rtt(int argc, char **argv)
         count = 1;
     }
 
-    return _run_coap_get_series(uri, count, indirect,
-                                start_jitter_ms, request_jitter_ms);
+    int res = _run_coap_get_series(uri, count, indirect,
+                                   start_jitter_ms, request_jitter_ms);
+    puts("coap: rtt done");
+    return res;
 }
 
 static const shell_command_t _commands[] = {
     { "coap", "coap get [-i] <coap://[addr]/path>", _cmd_coap },
-    { "measure_rtt", "measure_rtt [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>", _cmd_measure_rtt },
+    { "rtt", "rtt [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>", _cmd_rtt },
     { "duty", "duty <interval_ms> [iface_pid] | duty stop", _cmd_duty },
     { "indirect", "indirect on|off [iface_pid]", _cmd_indirect },
     { NULL, NULL, NULL }
@@ -750,11 +752,13 @@ static void _auto_add_link_local(void)
     }
 }
 
+#define COAP_SHELL_BUFSIZE 256
+
 int main(void)
 {
     gcoap_register_listener(&_listener);
     _auto_add_link_local();
-    char line_buf[SHELL_DEFAULT_BUFSIZE];
-    shell_run(_commands, line_buf, SHELL_DEFAULT_BUFSIZE);
+    char line_buf[COAP_SHELL_BUFSIZE];
+    shell_run(_commands, line_buf, COAP_SHELL_BUFSIZE);
     return 0;
 }
