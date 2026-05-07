@@ -389,8 +389,10 @@ static void _mac_data_confirm(void *arg, uint8_t handle, int status)
     dev->last_tx_status = status;
     dev->tx_done = true;
     mutex_unlock(&dev->tx_lock);
-    if (dev->netif && dev->netif->dev && dev->netif->dev->event_callback) {
-        dev->netif->dev->event_callback(dev->netif->dev, NETDEV_EVENT_TX_COMPLETE);
+    if (dev->netif) {
+        if (dev->netif->dev && dev->netif->dev->event_callback) {
+            dev->netif->dev->event_callback(dev->netif->dev, NETDEV_EVENT_TX_COMPLETE);
+        }
     }
 }
 
