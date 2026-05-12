@@ -21,6 +21,7 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -108,6 +109,16 @@ static void _on_sock_dtls_evt(sock_dtls_t *sock, sock_async_flags_t type, void *
 static void _dtls_free_up_session(void *arg);
 #endif
 
+#ifdef GCOAP_TRACE_DIAG
+static int _memo_index(const gcoap_request_memo_t *memo);
+static unsigned _memo_token_len(const gcoap_request_memo_t *memo);
+static void _trace_token(const uint8_t *token, unsigned tkl);
+static void _trace_memo_event(const char *event, const gcoap_request_memo_t *memo);
+static void _trace_response_event(const char *event, const coap_pkt_t *pdu,
+                                  const gcoap_request_memo_t *memo);
+static void _trace_open_reqs_snapshot(void);
+#endif
+
 static char _ipv6_addr_str[IPV6_ADDR_MAX_STR_LEN];
 
 /* Internal variables */
@@ -158,6 +169,65 @@ static event_queue_t _queue;
 static uint8_t _listen_buf[CONFIG_GCOAP_PDU_BUF_SIZE];
 static sock_udp_t _sock_udp;
 static event_callback_t _receive_from_cache;
+
+#ifdef GCOAP_TRACE_DIAG
+static int _memo_index(const gcoap_request_memo_t *memo)
+{
+    return (int)(memo - &_coap_state.open_reqs[0]);
+}
+
+static unsigned _memo_token_len(const gcoap_request_memo_t *memo)
+{
+    return gcoap_request_memo_get_hdr(memo)->ver_t_tkl & 0x0f;
+}
+
+static void _trace_token(const uint8_t *token, unsigned tkl)
+{
+    for (unsigned i = 0; i < tkl; i++) {
+        printf("%02x", token[i]);
+    }
+}
+
+static void _trace_memo_event(const char *event, const gcoap_request_memo_t *memo)
+{
+    const coap_udp_hdr_t *hdr = gcoap_request_memo_get_hdr(memo);
+    unsigned tkl = _memo_token_len(memo);
+    const uint8_t *token = ((const uint8_t *)hdr) + sizeof(*hdr);
+
+    printf("gcoap-trace: %s slot=%d state=%u limit=%d mid=%" PRIu16 " token=",
+           event, _memo_index(memo), memo->state, memo->send_limit, ntohs(hdr->id));
+    _trace_token(token, tkl);
+    printf(" tkl=%u\n", tkl);
+}
+
+static void _trace_response_event(const char *event, const coap_pkt_t *pdu,
+                                  const gcoap_request_memo_t *memo)
+{
+    unsigned tkl = coap_get_token_len(pdu);
+    uint8_t *token = coap_get_token(pdu);
+
+    printf("gcoap-trace: %s mid=%" PRIu16 " token=", event, coap_get_id(pdu));
+    _trace_token(token, tkl);
+    printf(" tkl=%u", tkl);
+    if (memo) {
+        printf(" slot=%d", _memo_index(memo));
+    }
+    puts("");
+}
+
+static void _trace_open_reqs_snapshot(void)
+{
+    puts("gcoap-trace: open request snapshot begin");
+    for (int i = 0; i < CONFIG_GCOAP_REQ_WAITING_MAX; i++) {
+        gcoap_request_memo_t *memo = &_coap_state.open_reqs[i];
+        if (memo->state == GCOAP_MEMO_UNUSED) {
+            continue;
+        }
+        _trace_memo_event("open", memo);
+    }
+    puts("gcoap-trace: open request snapshot end");
+}
+#endif
 
 #if IS_USED(MODULE_GCOAP_DTLS)
 /* DTLS variables and definitions */
@@ -501,6 +571,9 @@ static void _process_coap_pdu(gcoap_socket_t *sock, sock_udp_ep_t *remote, sock_
     case COAP_CLASS_SERVER_FAILURE:
         memo = _find_req_memo_by_pdu_token(&pdu, remote);
         if (memo) {
+#ifdef GCOAP_TRACE_DIAG
+            _trace_response_event("response matched", &pdu, memo);
+#endif
             switch (coap_get_type(&pdu)) {
             case COAP_TYPE_CON:
                 messagelayer_emptyresponse_type = COAP_TYPE_ACK;
@@ -563,6 +636,10 @@ static void _process_coap_pdu(gcoap_socket_t *sock, sock_udp_ep_t *remote, sock_
         }
         else {
             DEBUG("gcoap: msg not found for ID: %u\n", coap_get_id(&pdu));
+#ifdef GCOAP_TRACE_DIAG
+            _trace_response_event("response unmatched", &pdu, NULL);
+            _trace_open_reqs_snapshot();
+#endif
             if (coap_get_type(&pdu) == COAP_TYPE_CON) {
                 /* we might run into this if an ACK to a sender got lost
                  * see https://datatracker.ietf.org/doc/html/rfc7252#section-5.3.2 */
@@ -1049,6 +1126,9 @@ static void _expire_request(gcoap_request_memo_t *memo)
 {
     DEBUG("coap: received timeout message\n");
     if ((memo->state == GCOAP_MEMO_RETRANSMIT) || (memo->state == GCOAP_MEMO_WAIT)) {
+#ifdef GCOAP_TRACE_DIAG
+        _trace_memo_event("timeout expiring", memo);
+#endif
         memo->state = GCOAP_MEMO_TIMEOUT;
         /* Pass response to handler */
         if (memo->resp_handler) {
@@ -1834,6 +1914,10 @@ ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
             memo->send_limit = GCOAP_SEND_LIMIT_NON;
             memcpy(&memo->msg.hdr_buf[0], buf, GCOAP_HEADER_MAXLEN);
             timeout = CONFIG_GCOAP_NON_TIMEOUT_MSEC;
+#ifdef GCOAP_TRACE_DIAG
+            _trace_memo_event("request registered", memo);
+            printf("gcoap-trace: request timeout_ms=%" PRIu32 "\n", timeout);
+#endif
             break;
         default:
             memo->state = GCOAP_MEMO_UNUSED;
