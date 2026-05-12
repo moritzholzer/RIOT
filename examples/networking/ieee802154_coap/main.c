@@ -4,6 +4,7 @@
 
 #include <inttypes.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,7 @@
 #include "random.h"
 #include "sema.h"
 #include "shell.h"
+#include "msg.h"
 #include "thread.h"
 #include "uri_parser.h"
 #include "ztimer.h"
@@ -42,14 +44,37 @@
 #define SLEEPY_OFF_RETRY_DELAY_MS        10U
 #define SLEEPY_OFF_RETRIES               20U
 #define COAP_RESPONSE_WAIT_MS            (CONFIG_GCOAP_NON_TIMEOUT_MSEC + 1000U)
+#define MAIN_QUEUE_SIZE                  (256U)
 
 static void _sleepy_note_activity(uint32_t duration_ms);
+static msg_t _main_msg_queue[MAIN_QUEUE_SIZE];
 
 typedef struct {
-    sema_t done;
+    volatile bool active;
+    volatile const char *phase;
+    volatile unsigned sent_count;
+    volatile unsigned completed_count;
+    volatile unsigned last_sent_seq;
+    volatile unsigned last_completed_seq;
+    volatile uint32_t last_progress_ms;
+} poisson_diag_t;
+
+static poisson_diag_t _poisson_diag = {
+    .active = false,
+    .phase = "idle",
+};
+static kernel_pid_t _poisson_diag_pid = KERNEL_PID_UNDEF;
+static char _poisson_diag_stack[THREAD_STACKSIZE_DEFAULT];
+
+typedef struct {
+    sema_t *done;
+    uint8_t *buf;
     unsigned seq;
     uint16_t msg_id;
     bool response;
+    bool async;
+    bool completed;
+    uint32_t start_us;
 } coap_req_ctx_t;
 
 typedef struct {
@@ -94,6 +119,14 @@ static void _tx_indirect_restore(const tx_indirect_state_t *state)
 
     (void)gnrc_netapi_set(state->netif->pid, NETOPT_TX_INDIRECT, 0,
                           &state->tx_indirect, sizeof(state->tx_indirect));
+}
+
+static void _free_req_buf(coap_req_ctx_t *ctx)
+{
+    if (ctx && ctx->buf) {
+        free(ctx->buf);
+        ctx->buf = NULL;
+    }
 }
 
 static void _resp_handler(const gcoap_request_memo_t *memo, coap_pkt_t *pdu,
@@ -155,10 +188,50 @@ static void _resp_handler(const gcoap_request_memo_t *memo, coap_pkt_t *pdu,
         }
     }
 
-    /* signal waiting sender if any */
-    if (ctx) {
-        sema_post(&ctx->done);
+    if (ctx && ctx->async && memo->state == GCOAP_MEMO_RESP) {
+        uint32_t rtt_us = ztimer_now(ZTIMER_USEC) - ctx->start_us;
+        printf("%u,%u,%" PRIu32 "\n", ctx->seq, ctx->msg_id, rtt_us);
     }
+
+    /* signal waiting sender if any */
+    if (ctx && !ctx->completed) {
+        if (ctx->async) {
+            _poisson_diag.completed_count++;
+            _poisson_diag.last_completed_seq = ctx->seq;
+            _poisson_diag.last_progress_ms = ztimer_now(ZTIMER_MSEC);
+        }
+        ctx->completed = true;
+        _free_req_buf(ctx);
+        if (ctx->done) {
+            sema_post(ctx->done);
+        }
+    }
+}
+
+static void *_poisson_diag_thread(void *arg)
+{
+    (void)arg;
+
+    while (1) {
+        ztimer_sleep(ZTIMER_MSEC, 1000);
+        if (!_poisson_diag.active) {
+            continue;
+        }
+
+        uint32_t now_ms = ztimer_now(ZTIMER_MSEC);
+        uint32_t stalled_ms = now_ms - _poisson_diag.last_progress_ms;
+        printf("coap: diag phase=%s sent=%u completed=%u last_sent=%u "
+               "last_completed=%u open=%u stalled_ms=%" PRIu32 "\n",
+               _poisson_diag.phase,
+               _poisson_diag.sent_count,
+               _poisson_diag.completed_count,
+               _poisson_diag.last_sent_seq,
+               _poisson_diag.last_completed_seq,
+               (unsigned)gcoap_op_state(),
+               stalled_ms);
+    }
+
+    return NULL;
 }
 
 static int _uristr2remote(const char *uri, sock_udp_ep_t *remote,
@@ -250,13 +323,28 @@ static gcoap_listener_t _listener = {
     .next = NULL,
 };
 
-static void _sleep_ms_jitter(uint32_t max_ms)
+static uint32_t _exp_delay_ms(uint32_t mean_ms)
 {
-    if (max_ms == 0) {
-        return;
+    if (mean_ms == 0) {
+        return 0;
     }
 
-    uint32_t delay_ms = random_uint32_range(0, max_ms + 1);
+    /* Inverse-transform sampling for Exp(lambda=1/mean_ms). Clamp away
+       from 0 so log() stays finite and each interval is independent. */
+    double u = ((double)random_uint32() + 1.0) / ((double)UINT32_MAX + 2.0);
+    double sample_ms = -(double)mean_ms * log(u);
+
+    if (sample_ms >= (double)UINT32_MAX) {
+        return UINT32_MAX;
+    }
+
+    return (uint32_t)sample_ms;
+}
+
+static void _sleep_ms_jitter(uint32_t mean_ms)
+{
+    uint32_t delay_ms = _exp_delay_ms(mean_ms);
+
     if (delay_ms > 0) {
         ztimer_sleep(ZTIMER_MSEC, delay_ms);
     }
@@ -276,13 +364,18 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
 
     coap_req_ctx_t req_ctx;
     tx_indirect_state_t tx_indirect;
+    sema_t done;
 
-    sema_create(&req_ctx.done, 0);
+    sema_create(&done, 0);
+    req_ctx.done = &done;
+    req_ctx.buf = NULL;
+    req_ctx.async = false;
+    req_ctx.completed = false;
     if (indirect) {
         int res = _tx_indirect_set(&tx_indirect, true);
         if (res < 0) {
             printf("coap: failed to enable indirect TX: %d\n", res);
-            sema_destroy(&req_ctx.done);
+            sema_destroy(&done);
             return 1;
         }
     }
@@ -296,6 +389,7 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
         uint8_t buf[CONFIG_GCOAP_PDU_BUF_SIZE];
         coap_pkt_t pdu;
         req_ctx.response = false;
+        req_ctx.completed = false;
 
         int init_res = gcoap_req_init(&pdu, buf, sizeof(buf),
                                       COAP_METHOD_GET, path);
@@ -311,7 +405,7 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
 
         req_ctx.seq = i + 1;
         req_ctx.msg_id = coap_get_id(&pdu);
-        uint32_t start_us = ztimer_now(ZTIMER_USEC);
+        req_ctx.start_us = ztimer_now(ZTIMER_USEC);
         printf("coap: send seq=%u msg ID %u, %" PRIuSIZE " bytes\n",
                req_ctx.seq, req_ctx.msg_id, (size_t)len);
         ssize_t sent = gcoap_req_send(buf, len, &remote, NULL,
@@ -330,7 +424,7 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
             continue;
         }
 
-        int wait_res = sema_wait_timed_ztimer(&req_ctx.done, ZTIMER_MSEC,
+        int wait_res = sema_wait_timed_ztimer(&done, ZTIMER_MSEC,
                                               COAP_RESPONSE_WAIT_MS);
         uint32_t end_us = ztimer_now(ZTIMER_USEC);
         if (wait_res < 0) {
@@ -338,8 +432,8 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
                    req_ctx.seq, req_ctx.msg_id);
         }
         else if (req_ctx.response) {
-            uint32_t rtt_us = end_us - start_us;
-            printf("%u,%" PRIu32 "\n", i + 1, rtt_us);
+            uint32_t rtt_us = end_us - req_ctx.start_us;
+            printf("%u,%u,%" PRIu32 "\n", req_ctx.seq, req_ctx.msg_id, rtt_us);
         }
         else {
             printf("coap: no response seq=%u msg ID %u\n",
@@ -350,7 +444,163 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
     }
 
     _tx_indirect_restore(&tx_indirect);
-    sema_destroy(&req_ctx.done);
+    sema_destroy(&done);
+    return 0;
+}
+
+static int _run_coap_get_poisson(const char *uri, unsigned count, bool indirect,
+                                 uint32_t mean_interval_ms)
+{
+    sock_udp_ep_t remote;
+    char hostbuf[CONFIG_URI_MAX];
+    const char *path = NULL;
+
+    if (_uristr2remote(uri, &remote, &path, hostbuf, sizeof(hostbuf)) != 0) {
+        puts("coap: invalid URI");
+        return 1;
+    }
+
+    coap_req_ctx_t *req_ctx = calloc(count, sizeof(*req_ctx));
+    if (req_ctx == NULL) {
+        puts("coap: no memory for poisson request contexts");
+        return 1;
+    }
+
+    tx_indirect_state_t tx_indirect;
+    sema_t *done = malloc(sizeof(*done));
+    unsigned sent_count = 0;
+    bool leaked_state = false;
+
+    if (done == NULL) {
+        puts("coap: no memory for poisson semaphore");
+        free(req_ctx);
+        return 1;
+    }
+
+    _poisson_diag.active = true;
+    _poisson_diag.phase = "init";
+    _poisson_diag.sent_count = 0;
+    _poisson_diag.completed_count = 0;
+    _poisson_diag.last_sent_seq = 0;
+    _poisson_diag.last_completed_seq = 0;
+    _poisson_diag.last_progress_ms = ztimer_now(ZTIMER_MSEC);
+
+    sema_create(done, 0);
+    if (indirect) {
+        int res = _tx_indirect_set(&tx_indirect, true);
+        if (res < 0) {
+            printf("coap: failed to enable indirect TX: %d\n", res);
+            sema_destroy(done);
+            free(done);
+            free(req_ctx);
+            return 1;
+        }
+    }
+    else {
+        tx_indirect.valid = false;
+    }
+
+    _sleep_ms_jitter(mean_interval_ms);
+    _poisson_diag.phase = "send_loop";
+
+    for (unsigned i = 0; i < count; i++) {
+        coap_pkt_t pdu;
+        coap_req_ctx_t *ctx = &req_ctx[i];
+        ctx->buf = malloc(CONFIG_GCOAP_PDU_BUF_SIZE);
+        if (ctx->buf == NULL) {
+            puts("coap: no memory for poisson request buffer");
+            _sleep_ms_jitter(mean_interval_ms);
+            continue;
+        }
+
+        int init_res = gcoap_req_init(&pdu, ctx->buf, CONFIG_GCOAP_PDU_BUF_SIZE,
+                                      COAP_METHOD_GET, path);
+        if (init_res < 0) {
+            printf("coap: request init failed: %d\n", init_res);
+            _free_req_buf(ctx);
+            _sleep_ms_jitter(mean_interval_ms);
+            continue;
+        }
+        ssize_t len = coap_opt_finish(&pdu, COAP_OPT_FINISH_NONE);
+        if (len < 0) {
+            printf("coap: request build failed: %d\n", (int)len);
+            _free_req_buf(ctx);
+            _sleep_ms_jitter(mean_interval_ms);
+            continue;
+        }
+
+        ctx->done = done;
+        ctx->seq = i + 1;
+        ctx->msg_id = coap_get_id(&pdu);
+        ctx->response = false;
+        ctx->async = true;
+        ctx->completed = false;
+        ctx->start_us = ztimer_now(ZTIMER_USEC);
+        _poisson_diag.last_sent_seq = ctx->seq;
+        _poisson_diag.last_progress_ms = ztimer_now(ZTIMER_MSEC);
+
+        printf("coap: poisson send seq=%u msg ID %u, %" PRIuSIZE " bytes\n",
+               ctx->seq, ctx->msg_id, (size_t)len);
+        ssize_t sent = gcoap_req_send(ctx->buf, len, &remote, NULL,
+                                      _resp_handler, ctx,
+                                      GCOAP_SOCKET_TYPE_UDP);
+
+        if (sent <= 0) {
+            printf("coap: send failed seq=%u msg ID %u: %d, open requests: %u\n",
+                   ctx->seq, ctx->msg_id, (int)sent,
+                   (unsigned)gcoap_op_state());
+            ctx->completed = true;
+            _free_req_buf(ctx);
+            if (indirect) {
+                printf("coap: aborting at seq=%u msg ID %u due to lower-layer backpressure\n",
+                       ctx->seq, ctx->msg_id);
+                break;
+            }
+        }
+        else {
+            sent_count++;
+            _poisson_diag.sent_count = sent_count;
+        }
+
+        _sleep_ms_jitter(mean_interval_ms);
+    }
+
+    _poisson_diag.phase = "wait_loop";
+    for (unsigned i = 0; i < sent_count; i++) {
+        int wait_res = sema_wait_timed_ztimer(done, ZTIMER_MSEC,
+                                              COAP_RESPONSE_WAIT_MS);
+        if (wait_res < 0) {
+            puts("coap: poisson wait timed out");
+            leaked_state = true;
+            break;
+        }
+    }
+
+    _tx_indirect_restore(&tx_indirect);
+    _poisson_diag.phase = "cleanup";
+    unsigned completed_count = 0;
+    for (unsigned i = 0; i < sent_count; i++) {
+        if (req_ctx[i].completed) {
+            _free_req_buf(&req_ctx[i]);
+            completed_count++;
+        }
+    }
+    if (completed_count < sent_count) {
+        leaked_state = true;
+    }
+
+    if (!leaked_state) {
+        sema_destroy(done);
+        free(done);
+        free(req_ctx);
+    }
+    else {
+        puts("coap: poisson preserving pending callback state");
+    }
+    printf("coap: poisson done sent=%u completed=%u unresolved=%u\n",
+           sent_count, completed_count, sent_count - completed_count);
+    _poisson_diag.active = false;
+    _poisson_diag.phase = "idle";
     return 0;
 }
 
@@ -699,9 +949,42 @@ static int _cmd_rtt(int argc, char **argv)
     return res;
 }
 
+static int _cmd_poisson(int argc, char **argv)
+{
+    if (argc < 4 || argc > 5) {
+        printf("usage: %s [-i] <coap://[addr]/path> <count> <mean_interval_ms>\n",
+               argv[0]);
+        return 1;
+    }
+
+    int arg_idx = 1;
+    bool indirect = false;
+    if (strcmp(argv[arg_idx], "-i") == 0) {
+        indirect = true;
+        arg_idx++;
+    }
+
+    if ((argc - arg_idx) != 3) {
+        printf("usage: %s [-i] <coap://[addr]/path> <count> <mean_interval_ms>\n",
+               argv[0]);
+        return 1;
+    }
+
+    const char *uri = argv[arg_idx++];
+    unsigned count = (unsigned)atoi(argv[arg_idx++]);
+    uint32_t mean_interval_ms = (uint32_t)strtoul(argv[arg_idx++], NULL, 10);
+
+    if (count == 0) {
+        count = 1;
+    }
+
+    return _run_coap_get_poisson(uri, count, indirect, mean_interval_ms);
+}
+
 static const shell_command_t _commands[] = {
     { "coap", "coap get [-i] <coap://[addr]/path>", _cmd_coap },
     { "rtt", "rtt [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>", _cmd_rtt },
+    { "poisson", "poisson [-i] <coap://[addr]/path> <count> <mean_interval_ms>", _cmd_poisson },
     { "duty", "duty <interval_ms> [iface_pid] | duty stop", _cmd_duty },
     { "indirect", "indirect on|off [iface_pid]", _cmd_indirect },
     { NULL, NULL, NULL }
@@ -758,6 +1041,14 @@ int main(void)
 {
     gcoap_register_listener(&_listener);
     _auto_add_link_local();
+    msg_init_queue(_main_msg_queue, MAIN_QUEUE_SIZE);
+    if (_poisson_diag_pid == KERNEL_PID_UNDEF) {
+        _poisson_diag_pid = thread_create(_poisson_diag_stack,
+                                          sizeof(_poisson_diag_stack),
+                                          THREAD_PRIORITY_MAIN - 2, 0,
+                                          _poisson_diag_thread, NULL,
+                                          "poisson_diag");
+    }
     char line_buf[COAP_SHELL_BUFSIZE];
     shell_run(_commands, line_buf, COAP_SHELL_BUFSIZE);
     return 0;
