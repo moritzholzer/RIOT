@@ -1,11 +1,18 @@
 DEFAULT_MODULE += auto_init_at86rf2xx
-DEFAULT_MODULE += netdev_ieee802154_oqpsk
 
 USEMODULE += ztimer
 USEMODULE += ztimer_usec
-USEMODULE += ieee802154
-USEMODULE += netdev_ieee802154
-USEMODULE += netdev_legacy_api
+USEMODULE += event_thread
+USEMODULE += event_thread_highest
+
+ifneq (,$(filter netdev,$(USEMODULE)))
+  ifneq (,$(filter gnrc_gomach gnrc_lwmac,$(USEMODULE)))
+    USEMODULE += netdev_ieee802154_submac
+  else
+    USEMODULE += gnrc_netif_ieee802154_mac
+  endif
+  DEFAULT_MODULE += netdev_ieee802154_oqpsk
+endif
 
 # only needed for SPI based variants
 ifeq (,$(filter at86rfa1 at86rfr2,$(USEMODULE)))

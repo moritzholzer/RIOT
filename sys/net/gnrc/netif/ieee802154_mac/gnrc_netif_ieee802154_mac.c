@@ -38,16 +38,13 @@
 #include "net/gnrc/netapi.h"
 #include "net/gnrc/nettype.h"
 #include "net/gnrc/netif/dedup.h"
-#include "net/ieee802154.h"
-#ifdef MODULE_IEEE802154_SECURITY
-#include "net/ieee802154_security.h"
-#endif
 
 
 #include "net/ieee802154.h"
 #include "net/ieee802154/radio.h"
 #include "net/ieee802154/mac.h"
 #include "net/ieee802154/submac.h"
+#include "net/eui_provider.h"
 #include "net/eui_provider.h"
 
 #include "net/netopt.h"
@@ -57,7 +54,7 @@
 #include "net/l2filter.h"
 #endif
 
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 #include "debug.h"
 
 #ifndef GNRC_NETIF_IEEE802154_MAC_POLL_INTERVAL_MS
