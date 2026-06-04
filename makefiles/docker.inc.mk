@@ -5,7 +5,7 @@
 # When the docker image is updated, checks at
 # dist/tools/buildsystem_sanity_check/check.sh start complaining in CI, and
 # provide the latest values to verify and fill in.
-DOCKER_TESTED_IMAGE_REPO_DIGEST := 028d9267e715e992d9b47bb8738685c6cc96b1a3bc3924489e7e543a333e8486
+DOCKER_TESTED_IMAGE_REPO_DIGEST := 84746b38b9a6248a21bfa2f9bd4d7a052870c35a689d9b32a06be2f5d7042156
 
 DOCKER_PULL_IDENTIFIER := docker.io/riot/riotbuild@sha256:$(DOCKER_TESTED_IMAGE_REPO_DIGEST)
 export DOCKER_IMAGE ?= $(DOCKER_PULL_IDENTIFIER)
@@ -145,7 +145,7 @@ _docker_is_podman = $(shell $(DOCKER) --version | grep podman 2>/dev/null)
 # - allocate a pseudo-tty
 # - remove container on exit
 # - set username/UID to executor
-DOCKER_USER ?= $$(id -u)
+DOCKER_USER ?= $$(id -u):$$(id -g)
 DOCKER_USER_OPT = $(if $(_docker_is_podman),--userns keep-id,--user $(DOCKER_USER))
 DOCKER_RUN_FLAGS ?= --rm --tty $(DOCKER_USER_OPT)
 
@@ -312,6 +312,7 @@ DOCKER_VOLUMES_AND_ENV += $(call docker_volume_and_env,RIOTBOARD,,riotboard)
 DOCKER_VOLUMES_AND_ENV += $(call docker_volume_and_env,RIOTMAKE,,riotmake)
 
 # Add GIT_CACHE_DIR if the directory exists
+GIT_CACHE_DIR ?= $(HOME)/.gitcache
 DOCKER_VOLUMES_AND_ENV += $(if $(wildcard $(GIT_CACHE_DIR)),$(call docker_volume,$(GIT_CACHE_DIR),$(DOCKER_BUILD_ROOT)/gitcache))
 DOCKER_VOLUMES_AND_ENV += $(if $(wildcard $(GIT_CACHE_DIR)),-e 'GIT_CACHE_DIR=$(DOCKER_BUILD_ROOT)/gitcache')
 

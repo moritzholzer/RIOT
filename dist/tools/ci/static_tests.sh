@@ -127,6 +127,7 @@ run ./dist/tools/headerguards/check.sh
 run ./dist/tools/buildsystem_sanity_check/check.sh
 run ./dist/tools/feature_resolution/check.sh
 run ./dist/tools/boards_supported/check.sh
+run ./dist/tools/board_doc_check/check.sh
 run ./dist/tools/codespell/check.sh
 run ./dist/tools/cargo-checks/check.sh
 run ./dist/tools/examples_check/check_has_readme.sh

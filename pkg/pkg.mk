@@ -49,24 +49,31 @@ else
   PKG_BUILD_DIR = $(PKG_SOURCE_DIR)
 endif
 
-PKG_SOURCE_LOCAL ?= $(PKG_SOURCE_LOCAL_$(shell echo $(PKG_NAME) | tr a-z- A-Z_))
+# If CARGO_HOME is set, use it to search for `git-cache-rs` (git-cache),
+# otherwise try the local default directory. The git-cache can also be set
+# directly with GIT_CACHE_RS.
+CARGO_HOME ?= $(HOME)/.cargo
 
-# git-cache specific management: GIT_CACHE_DIR is exported only
-# when cloning the repository.
-GITCACHE ?= $(RIOTTOOLS)/git/git-cache
-GIT_CACHE_DIR ?= $(HOME)/.gitcache
-include $(RIOTBASE)/makefiles/utils/variables.mk
-$(call target-export-variables,$(PKG_BUILDDIR)/.git,GIT_CACHE_DIR)
-
-# Check if git-cache-rs is installed in the local default directory and if so,
-# set the `GIT_CACHE_RS` variable to use it.
-DEFAULT_GIT_CACHE_RS ?= $(HOME)/.cargo/bin/git-cache
+DEFAULT_GIT_CACHE_RS ?= $(CARGO_HOME)/bin/git-cache
 ifeq ($(DEFAULT_GIT_CACHE_RS),$(wildcard $(DEFAULT_GIT_CACHE_RS)))
   GIT_CACHE_RS ?= $(DEFAULT_GIT_CACHE_RS)
 endif
 
-# allow overriding package source with local folder (useful during development)
+# The PKG_SOURCE_LOCAL and PKG_SOURCE_LOCAL_pkgname variables can be used to
+# override the package source with a local folder, which is useful during
+# development.
+ifeq ("environment", "$(origin PKG_SOURCE_LOCAL)")
+  $(info $(COLOR_YELLOW)Warning: You set a global PKG_SOURCE_LOCAL in the\
+	 environment. This can have effects on all packages! Consider using\
+	 PKG_SOURCE_LOCAL_$(PKG_NAME) instead!$(COLOR_RESET))
+endif
+
+PKG_SOURCE_LOCAL ?= $(PKG_SOURCE_LOCAL_$(shell echo $(PKG_NAME) | tr a-z- A-Z_))
+
 ifneq (,$(PKG_SOURCE_LOCAL))
+  $(info $(COLOR_YELLOW)Warning: PKG_SOURCE_LOCAL in use! Remember to remove it\
+	 before committing!$(COLOR_RESET))
+
   include $(RIOTBASE)/pkg/local.mk
 else
 
@@ -169,16 +176,6 @@ $(PKG_SOURCE_DIR)/.git: $(PKG_SPARSE_TAG) | $(PKG_CUSTOM_PREPARED)
 	$(if $(QUIETER),,$(info [INFO] cloning $(PKG_NAME) with git-cache-rs))
 	$(Q)rm -Rf $(PKG_SOURCE_DIR)
 	$(Q)$(GIT_CACHE_RS) clone --commit $(PKG_VERSION) $(addprefix --sparse-add ,$(PKG_SPARSE_PATHS)) -- $(PKG_URL) $(PKG_SOURCE_DIR)
-else ifeq ($(GIT_CACHE_DIR),$(wildcard $(GIT_CACHE_DIR)))
-$(PKG_SOURCE_DIR)/.git: | $(PKG_CUSTOM_PREPARED)
-	$(if $(QUIETER),,$(info [INFO] cloning $(PKG_NAME) with git-cache))
-	@echo "$(COLOR_YELLOW)Warning: git-cache is deprecated and will be" \
-	  "removed after the 2026.04 release! See" \
-	  "https://guides.riot-os.org/build-system/advanced_build_system_tricks/#speed-up-builds-with-git-cache-rs" \
-	  "for more information.$(COLOR_RESET)"
-	$(Q)rm -Rf $(PKG_SOURCE_DIR)
-	$(Q)mkdir -p $(PKG_SOURCE_DIR)
-	$(Q)$(GITCACHE) clone $(PKG_URL) $(PKG_VERSION) $(PKG_SOURCE_DIR)
 else
 # redirect stderr so git sees a pipe and not a terminal see https://github.com/git/git/blob/master/progress.c#L138
 $(PKG_SOURCE_DIR)/.git: $(PKG_SPARSE_TAG) | $(PKG_CUSTOM_PREPARED)
@@ -193,7 +190,8 @@ $(PKG_SOURCE_DIR)/.git: $(PKG_SPARSE_TAG) | $(PKG_CUSTOM_PREPARED)
 	$(Q)if [ -n "$(PKG_SPARSE_PATHS)" ]; then \
 	  # iff the package uses sparse paths, initialize the repository as sparse \
 	  $(if $(QUIETER),,echo "[INFO] using sparse checkout";) \
-	  $(GIT_IN_PKG) sparse-checkout set --no-cone -- $(foreach p,$(PKG_SPARSE_PATHS),"$(p)"); \
+	  $(GIT_IN_PKG) sparse-checkout init --no-cone; \
+	  $(GIT_IN_PKG) sparse-checkout set -- $(foreach p,$(PKG_SPARSE_PATHS),"$(p)"); \
 	fi
 	$(Q)$(GIT_IN_PKG) remote add origin $(PKG_URL)
 	$(Q)$(GIT_IN_PKG) config remote.origin.promisor true

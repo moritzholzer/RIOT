@@ -112,6 +112,15 @@ Here is a quick overview of the examples available in the RIOT:
 | [dtls-echo](./networking/dtls/dtls-echo/README.md) | This example shows how to use TinyDTLS with sock_udp. |
 | [dtls-wolfssl](./networking/dtls/dtls-wolfssl/README.md) | This example demonstrates the usage of the DTLS module with the wolfSSL library. |
 
+### DTN (BPv7)
+
+#### bplib
+
+| Example | Description |
+|---------|-------------|
+| [bplib_cla_udp](./networking/dtn/bplib_cla_udp/README.md) | This example shows the use of bplib with a single UDP contact. |
+| [bplib_cla_ble](./networking/dtn/bplib_cla_ble/README.md) | This example shows the use of bplib with a BLE L2CAP CLA. |
+
 ### Misc
 
 | Example | Description |
@@ -126,7 +135,8 @@ Here is a quick overview of the examples available in the RIOT:
 | [sniffer](./networking/misc/sniffer/README.md) | This application is built to run together with the script `./tools/sniffer.py` as a sniffer for (wireless) data traffic. |
 | [benckmark_udp](./networking/misc/benchmark_udp/README.md) | This example uses the `benchmark_udp` module to create a stress-test for the RIOT network stack. |
 | [sock_tcp_echo](./networking/misc/sock_tcp_echo/README.md) | This is a simple TCP echo server / client that uses the SOCK API. |
-| [lwip_ipv4](./networking/misc/lwip_ipv4/README.md) | This is a simple UDP client / server using LWIP for IPv4. |
+| [lwip_ipv4](./networking/misc/lwip_ipv4/README.md) | This is a simple UDP client / server using lwIP for IPv4. |
+| [lwiperf](./networking/misc/lwiperf/README.md) | This is a lwIP benchmark application, providing an iPerf client and server. |
 
 
 ## Advanced Examples

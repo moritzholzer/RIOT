@@ -1,3 +1,10 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Tom Hert <git@annsann.eu>
+ * SPDX-FileCopyrightText: 2026 Lasse Rosenow <Lasse.Rosenow@haw-hamburg.de>
+ * SPDX-FileCopyrightText: 2026 HAW Hamburg
+ * SPDX-License-Identifier: LGPL-2.1-only
+ */
+
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import rehypeGithubEmoji from "rehype-github-emoji";
@@ -89,10 +96,19 @@ export default defineConfig({
           items: [
             { label: "Introduction", slug: "index" },
             "general/structure",
+            "general/contributing",
             "general/vision",
             "general/governance",
             "general/security",
           ],
+        },
+        {
+          label: "Supported Boards",
+          link: "boards",
+        },
+        {
+          label: "Supported CPUs",
+          link: "cpus",
         },
         {
           label: "Tutorials",
@@ -142,6 +158,7 @@ export default defineConfig({
                 "advanced_tutorials/unittests",
                 "advanced_tutorials/device_drivers",
                 "advanced_tutorials/porting_boards",
+                "advanced_tutorials/porting_packages",
                 "advanced_tutorials/event_queue",
               ],
             },
@@ -171,12 +188,12 @@ export default defineConfig({
           label: "Miscellaneous",
           items: [
             "misc/dev_best_practices",
-            "misc/roadmap",
             "misc/lost_and_found",
             "misc/release_cycle",
             "misc/managing-a-release",
             "misc/emulators",
             "misc/terminal_config",
+            "misc/openocd",
             "misc/how_to_doc",
           ],
         },
@@ -202,7 +219,12 @@ export default defineConfig({
   vite: {
     server: {
       fs: {
-        allow: ["./", "../doxygen", "../../release-notes.txt"],
+        allow: [
+          "./",
+          "../doxygen",
+          "../../release-notes.txt",
+          "../../boards",
+        ],
       },
     },
   },
