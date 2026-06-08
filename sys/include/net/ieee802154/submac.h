@@ -184,6 +184,12 @@ typedef enum {
    IEEE802154_FSM_STATE_NUMOF,          /**< Number of SubMAC FSM states */
 } ieee802154_fsm_state_t;
 
+typedef enum {
+    IEEE802154_SUBMAC_TX_OPT_NONE        = 0,
+    IEEE802154_SUBMAC_TX_OPT_NO_CSMA_CA  = BIT0,
+    IEEE802154_SUBMAC_TX_OPT_NO_RETRANS  = BIT1,
+} ieee802154_submac_tx_opts_t;
+
 /**
  * @brief Internal SubMAC FSM state machine events
  */
@@ -220,6 +226,7 @@ struct ieee802154_submac {
     uint8_t backoff_mask;               /**< internal value used for random backoff calculation */
     uint8_t csma_retries;               /**< maximum number of CSMA-CA retries */
     int8_t tx_pow;                      /**< Transmission power (in dBm) */
+    uint8_t tx_opts;
     ieee802154_fsm_state_t fsm_state;    /**< State of the SubMAC */
     ieee802154_phy_mode_t phy_mode;     /**< IEEE 802.15.4 PHY mode */
     const iolist_t *psdu;               /**< stores the current PSDU */
@@ -244,6 +251,11 @@ struct ieee802154_submac {
  *         @ref ieee802154_submac_cb_t::tx_done
  */
 int ieee802154_send(ieee802154_submac_t *submac, const iolist_t *iolist);
+
+
+int ieee802154_send_ext(ieee802154_submac_t *submac,
+                        const iolist_t *iolist,
+                        uint8_t tx_opts);
 
 /**
  * @brief Set the IEEE 802.15.4 short address

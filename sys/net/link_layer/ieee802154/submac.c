@@ -84,6 +84,27 @@ static bool _has_retrans_left(ieee802154_submac_t *submac)
     return submac->retrans < CONFIG_IEEE802154_DEFAULT_MAX_FRAME_RETRANS;
 }
 
+static int _set_radio_csma(ieee802154_submac_t *submac, bool enable)
+{
+    ieee802154_dev_t *dev = &submac->dev;
+    if (!_does_handle_csma(dev))
+    {
+        return 0;
+    }
+
+    if (!enable) {
+        return ieee802154_radio_set_csma_params(dev, NULL, -1);
+    }
+
+    ieee802154_csma_be_t be = {
+        .min = submac->be.min,
+        .max = submac->be.max,
+    };
+
+    return ieee802154_radio_set_csma_params(dev, &be, submac->csma_retries);
+}
+
+
 static ieee802154_fsm_state_t _tx_end(ieee802154_submac_t *submac, int status,
                                       ieee802154_tx_info_t *info)
 {
@@ -94,7 +115,13 @@ static ieee802154_fsm_state_t _tx_end(ieee802154_submac_t *submac, int status,
 
     ieee802154_dev_t *dev = &submac->dev;
 
+    if (submac->tx_opts & IEEE802154_SUBMAC_TX_OPT_NO_CSMA_CA) 
+    {
+        _set_radio_csma(submac, true);
+    }
+
     submac->wait_for_ack = false;
+    submac->tx_opts = IEEE802154_SUBMAC_TX_OPT_NONE;
 
     res = ieee802154_radio_set_idle(dev, true);
 
@@ -125,7 +152,8 @@ static ieee802154_fsm_state_t _handle_tx_no_ack(ieee802154_submac_t *submac)
 
     /* In case of ACK Timeout, either trigger retransmissions or end
      * the TX procedure */
-    if (_has_retrans_left(submac)) {
+    if ((submac->tx_opts & IEEE802154_SUBMAC_TX_OPT_NO_RETRANS) ||
+        _has_retrans_left(submac)) {
         submac->retrans++;
         res = ieee802154_radio_set_idle(&submac->dev, true);
         assert(res >= 0);
@@ -324,6 +352,7 @@ static ieee802154_fsm_state_t _fsm_state_prepare(ieee802154_submac_t *submac,
     case IEEE802154_FSM_EV_BH:
         tx_state = IEEE802154_FSM_STATE_TX;
         if (ftype == IEEE802154_FCF_TYPE_DATA
+            && !(submac->tx_opts & IEEE802154_SUBMAC_TX_OPT_NO_CSMA_CA)
             && !_does_handle_csma(dev)) {
             /* delay for an adequate random backoff period */
             uint32_t bp = (random_uint32() & submac->backoff_mask) *
@@ -544,10 +573,19 @@ ieee802154_fsm_state_t ieee802154_submac_process_ev(ieee802154_submac_t *submac,
 
 int ieee802154_send(ieee802154_submac_t *submac, const iolist_t *iolist)
 {
+    return ieee802154_send_ext(submac, iolist, IEEE802154_SUBMAC_TX_OPT_NONE);
+}
+
+int ieee802154_send_ext(ieee802154_submac_t *submac,
+                        const iolist_t *iolist,
+                        uint8_t tx_opts)
+{
     ieee802154_fsm_state_t current_state = submac->fsm_state;
 
-    if (current_state != IEEE802154_FSM_STATE_RX && current_state != IEEE802154_FSM_STATE_IDLE) {
-        DEBUG("IEEE802154 submac: ieee802154_send(): Sending aborted, current state is %s\n", str_states[current_state]);
+    if (current_state != IEEE802154_FSM_STATE_RX &&
+        current_state != IEEE802154_FSM_STATE_IDLE) {
+        DEBUG("IEEE802154 submac: ieee802154_send_ext(): Sending aborted, current state is %s\n",
+              str_states[current_state]);
         return -EBUSY;
     }
 
@@ -563,10 +601,13 @@ int ieee802154_send(ieee802154_submac_t *submac, const iolist_t *iolist)
     submac->retrans = 0;
     submac->csma_retries_nb = 0;
     submac->backoff_mask = (1 << submac->be.min) - 1;
+    submac->tx_opts = tx_opts;
 
     if (ieee802154_submac_process_ev(submac, IEEE802154_FSM_EV_REQUEST_TX)
         != IEEE802154_FSM_STATE_PREPARE) {
-        DEBUG("IEEE802154 submac: ieee802154_send(): Tx frame failed %s\n", str_states[current_state]);
+        submac->tx_opts = IEEE802154_SUBMAC_TX_OPT_NONE;
+        DEBUG("IEEE802154 submac: ieee802154_send_ext(): Tx frame failed %s\n",
+              str_states[current_state]);
         return -EBUSY;
     }
     return 0;
