@@ -35,6 +35,10 @@ USEMODULE += ztimer_msec
 USEMODULE += ztimer_usec
 USEMODULE += sema
 
+ifneq (,$(filter adafruit-feather-nrf52840-express,$(BOARD)))
+	USEMODULE += stdio_uart
+endif
+
 DEVELHELP ?= 1
 VERBOSE_ASSERT ?= 1
 
@@ -43,7 +47,6 @@ include $(RIOTBASE)/Makefile.include
 # Kconfig exposes GCoAP's non-confirmable response timeout in microseconds,
 # while the current gcoap API consumes CONFIG_GCOAP_NON_TIMEOUT_MSEC.
 CFLAGS += -DCONFIG_GCOAP_NON_TIMEOUT_MSEC='(CONFIG_GCOAP_NON_TIMEOUT / 1000U)'
-CFLAGS += -DGCOAP_TRACE_DIAG=1
 
 # Increase resend buffers for blockwise follow-up requests
 #ifndef CONFIG_KCONFIG_MODULE_GCOAP

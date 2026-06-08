@@ -111,7 +111,6 @@ static void _dtls_free_up_session(void *arg);
 
 #ifdef GCOAP_TRACE_DIAG
 static int _memo_index(const gcoap_request_memo_t *memo);
-static unsigned _memo_token_len(const gcoap_request_memo_t *memo);
 static void _trace_token(const uint8_t *token, unsigned tkl);
 static void _trace_memo_event(const char *event, const gcoap_request_memo_t *memo);
 static void _trace_response_event(const char *event, const coap_pkt_t *pdu,
@@ -176,11 +175,6 @@ static int _memo_index(const gcoap_request_memo_t *memo)
     return (int)(memo - &_coap_state.open_reqs[0]);
 }
 
-static unsigned _memo_token_len(const gcoap_request_memo_t *memo)
-{
-    return gcoap_request_memo_get_hdr(memo)->ver_t_tkl & 0x0f;
-}
-
 static void _trace_token(const uint8_t *token, unsigned tkl)
 {
     for (unsigned i = 0; i < tkl; i++) {
@@ -190,14 +184,9 @@ static void _trace_token(const uint8_t *token, unsigned tkl)
 
 static void _trace_memo_event(const char *event, const gcoap_request_memo_t *memo)
 {
-    const coap_udp_hdr_t *hdr = gcoap_request_memo_get_hdr(memo);
-    unsigned tkl = _memo_token_len(memo);
-    const uint8_t *token = ((const uint8_t *)hdr) + sizeof(*hdr);
-
-    printf("gcoap-trace: %s slot=%d state=%u limit=%d mid=%" PRIu16 " token=",
-           event, _memo_index(memo), memo->state, memo->send_limit, ntohs(hdr->id));
-    _trace_token(token, tkl);
-    printf(" tkl=%u\n", tkl);
+    printf("gcoap-trace: %s slot=%d state=%u limit=%d hdr=%p\n",
+           event, _memo_index(memo), memo->state, memo->send_limit,
+           (const void *)gcoap_request_memo_get_hdr(memo));
 }
 
 static void _trace_response_event(const char *event, const coap_pkt_t *pdu,
@@ -694,6 +683,7 @@ static void _on_resp_timeout(void *arg) {
         timeout = random_uint32_range(timeout, end);
 #endif
         event_timeout_set(&memo->resp_evt_tmout, timeout);
+            printf("gcoap-trace: req_send after timeout_set\n");
 
         if (memo->state == GCOAP_MEMO_WAIT) {
             /* See _cease_retransmission: Still going through the timeouts and
@@ -1915,7 +1905,7 @@ ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
             memcpy(&memo->msg.hdr_buf[0], buf, GCOAP_HEADER_MAXLEN);
             timeout = CONFIG_GCOAP_NON_TIMEOUT_MSEC;
 #ifdef GCOAP_TRACE_DIAG
-            _trace_memo_event("request registered", memo);
+            puts("gcoap-trace: request registered");
             printf("gcoap-trace: request timeout_ms=%" PRIu32 "\n", timeout);
 #endif
             break;
@@ -1959,7 +1949,7 @@ ssize_t gcoap_req_send(const uint8_t *buf, size_t len,
         if (timeout > 0) {
             event_callback_init(&memo->resp_tmout_cb, _on_resp_timeout, memo);
             event_timeout_ztimer_init(&memo->resp_evt_tmout, ZTIMER_MSEC, &_queue,
-                               &memo->resp_tmout_cb.super);
+                                      &memo->resp_tmout_cb.super);
             event_timeout_set(&memo->resp_evt_tmout, timeout);
         }
         else {

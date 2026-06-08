@@ -34,54 +34,60 @@
 #define ENABLE_DEBUG 0
 #include "debug.h"
 
+extern volatile uint32_t gnrc_netif_ieee802154_mac_trace_id;
+
 #ifndef CONFIG_URI_MAX
 #define CONFIG_URI_MAX      128
 #endif
 
-#define SLEEPY_AWAKE_TIMEOUT_MS          10U
-#define SLEEPY_ACTIVE_WINDOW_MS          25U
+#define SLEEPY_AWAKE_TIMEOUT_MS          50U
+#define SLEEPY_ACTIVE_WINDOW_MS          80U
 #define SLEEPY_ACTIVITY_GUARD_MS         SLEEPY_ACTIVE_WINDOW_MS
+#define SLEEPY_WAKE_SETTLE_MS            20U
 #define SLEEPY_OFF_RETRY_DELAY_MS        10U
 #define SLEEPY_OFF_RETRIES               20U
 #define COAP_RESPONSE_WAIT_MS            (CONFIG_GCOAP_NON_TIMEOUT_MSEC + 1000U)
+#define POISSON_MAX_IN_FLIGHT            1U
+#define POISSON_GCOAP_SEND_OPEN_LIMIT    1U
 #define MAIN_QUEUE_SIZE                  (256U)
 
 static void _sleepy_note_activity(uint32_t duration_ms);
 static msg_t _main_msg_queue[MAIN_QUEUE_SIZE];
 
 typedef struct {
-    volatile bool active;
-    volatile const char *phase;
-    volatile unsigned sent_count;
-    volatile unsigned completed_count;
-    volatile unsigned last_sent_seq;
-    volatile unsigned last_completed_seq;
-    volatile uint32_t last_progress_ms;
-} poisson_diag_t;
-
-static poisson_diag_t _poisson_diag = {
-    .active = false,
-    .phase = "idle",
-};
-static kernel_pid_t _poisson_diag_pid = KERNEL_PID_UNDEF;
-static char _poisson_diag_stack[THREAD_STACKSIZE_DEFAULT];
-
-typedef struct {
     sema_t *done;
     uint8_t *buf;
     unsigned seq;
     uint16_t msg_id;
+    uint32_t trace_id;
     bool response;
+    bool sent;
+    bool timeout;
+    bool send_failed;
+    bool error;
     bool async;
     bool completed;
     uint32_t start_us;
 } coap_req_ctx_t;
 
 typedef struct {
+    volatile bool active;
+    char uri[CONFIG_URI_MAX];
+    unsigned requested;
+    unsigned seq;
+    unsigned responses;
+    unsigned timeouts;
+    unsigned send_failed;
+    sema_t done;
+} duty_rtt_state_t;
+
+typedef struct {
     gnrc_netif_t *netif;
     netopt_enable_t tx_indirect;
     bool valid;
 } tx_indirect_state_t;
+
+static duty_rtt_state_t _duty_rtt;
 
 static int _tx_indirect_set(tx_indirect_state_t *state, bool enable)
 {
@@ -137,17 +143,24 @@ static void _resp_handler(const gcoap_request_memo_t *memo, coap_pkt_t *pdu,
 
     if (memo->state == GCOAP_MEMO_TIMEOUT) {
         if (ctx) {
-            printf("coap: timeout seq=%u msg ID %u\n",
-                   ctx->seq, ctx->msg_id);
+            ctx->timeout = true;
+            printf("coap: timeout seq=%u msg ID %u trace=%" PRIu32 "\n",
+                   ctx->seq, ctx->msg_id, ctx->trace_id);
         }
         else {
             printf("coap: timeout for msg ID %u\n", coap_get_id(pdu));
         }
     }
     else if (memo->state == GCOAP_MEMO_RESP_TRUNC) {
+        if (ctx) {
+            ctx->error = true;
+        }
         puts("coap: warning, incomplete response");
     }
     else if (memo->state != GCOAP_MEMO_RESP) {
+        if (ctx) {
+            ctx->error = true;
+        }
         puts("coap: error in response");
     }
     else {
@@ -158,8 +171,8 @@ static void _resp_handler(const gcoap_request_memo_t *memo, coap_pkt_t *pdu,
         char *class_str = (coap_get_code_class(pdu) == COAP_CLASS_SUCCESS)
                           ? "Success" : "Error";
         if (ctx) {
-            printf("coap: response seq=%u msg ID %u %s, code %1u.%02u",
-                   ctx->seq, ctx->msg_id, class_str,
+            printf("coap: response seq=%u msg ID %u trace=%" PRIu32 " %s, code %1u.%02u",
+                   ctx->seq, ctx->msg_id, ctx->trace_id, class_str,
                    coap_get_code_class(pdu), coap_get_code_detail(pdu));
         }
         else {
@@ -195,43 +208,12 @@ static void _resp_handler(const gcoap_request_memo_t *memo, coap_pkt_t *pdu,
 
     /* signal waiting sender if any */
     if (ctx && !ctx->completed) {
-        if (ctx->async) {
-            _poisson_diag.completed_count++;
-            _poisson_diag.last_completed_seq = ctx->seq;
-            _poisson_diag.last_progress_ms = ztimer_now(ZTIMER_MSEC);
-        }
         ctx->completed = true;
         _free_req_buf(ctx);
         if (ctx->done) {
             sema_post(ctx->done);
         }
     }
-}
-
-static void *_poisson_diag_thread(void *arg)
-{
-    (void)arg;
-
-    while (1) {
-        ztimer_sleep(ZTIMER_MSEC, 1000);
-        if (!_poisson_diag.active) {
-            continue;
-        }
-
-        uint32_t now_ms = ztimer_now(ZTIMER_MSEC);
-        uint32_t stalled_ms = now_ms - _poisson_diag.last_progress_ms;
-        printf("coap: diag phase=%s sent=%u completed=%u last_sent=%u "
-               "last_completed=%u open=%u stalled_ms=%" PRIu32 "\n",
-               _poisson_diag.phase,
-               _poisson_diag.sent_count,
-               _poisson_diag.completed_count,
-               _poisson_diag.last_sent_seq,
-               _poisson_diag.last_completed_seq,
-               (unsigned)gcoap_op_state(),
-               stalled_ms);
-    }
-
-    return NULL;
 }
 
 static int _uristr2remote(const char *uri, sock_udp_ep_t *remote,
@@ -283,9 +265,6 @@ static ssize_t _ts_handler(coap_pkt_t *pdu, uint8_t *buf, size_t len,
     _sleepy_note_activity(SLEEPY_ACTIVITY_GUARD_MS);
 
     uint32_t now_us = ztimer_now(ZTIMER_USEC);
-    uint16_t msg_id = coap_get_id(pdu);
-    printf("coap: received GET /ts msg ID %u at %" PRIu32 " us\n",
-           msg_id, now_us);
 
     gcoap_resp_init(pdu, buf, len, COAP_CODE_CONTENT);
     coap_opt_add_format(pdu, COAP_FORMAT_TEXT);
@@ -295,7 +274,6 @@ static ssize_t _ts_handler(coap_pkt_t *pdu, uint8_t *buf, size_t len,
     if (plen < 0) {
         ssize_t res = gcoap_response(pdu, buf, len,
                                      COAP_CODE_INTERNAL_SERVER_ERROR);
-        printf("coap: response error msg ID %u res=%d\n", msg_id, (int)res);
         return res;
     }
 
@@ -303,14 +281,11 @@ static ssize_t _ts_handler(coap_pkt_t *pdu, uint8_t *buf, size_t len,
     if (hdr_len + (size_t)plen > len) {
         ssize_t res = gcoap_response(pdu, buf, len,
                                      COAP_CODE_INTERNAL_SERVER_ERROR);
-        printf("coap: response error msg ID %u res=%d\n", msg_id, (int)res);
         return res;
     }
 
     memcpy(pdu->payload, payload, (size_t)plen);
-    ssize_t res = (ssize_t)(hdr_len + (size_t)plen);
-    printf("coap: response prepared msg ID %u len=%d\n", msg_id, (int)res);
-    return res;
+    return (ssize_t)(hdr_len + (size_t)plen);
 }
 
 static const coap_resource_t _resources[] = {
@@ -350,6 +325,36 @@ static void _sleep_ms_jitter(uint32_t mean_ms)
     }
 }
 
+static int _wait_req_done(sema_t *done, uint32_t timeout_ms)
+{
+    uint32_t start_ms = ztimer_now(ZTIMER_MSEC);
+
+    while ((uint32_t)(ztimer_now(ZTIMER_MSEC) - start_ms) < timeout_ms) {
+        int res = sema_try_wait(done);
+        if (res == 0) {
+            return 0;
+        }
+        if (res == -ECANCELED) {
+            return res;
+        }
+        ztimer_sleep(ZTIMER_MSEC, 10);
+    }
+
+    return -ETIMEDOUT;
+}
+
+static unsigned _drain_req_done(sema_t *done, unsigned drained_count,
+                                unsigned sent_count)
+{
+    while (drained_count < sent_count) {
+        if (sema_try_wait(done) != 0) {
+            break;
+        }
+        drained_count++;
+    }
+    return drained_count;
+}
+
 static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
                                 uint32_t start_jitter_ms, uint32_t request_jitter_ms)
 {
@@ -369,6 +374,7 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
     sema_create(&done, 0);
     req_ctx.done = &done;
     req_ctx.buf = NULL;
+    req_ctx.trace_id = 0;
     req_ctx.async = false;
     req_ctx.completed = false;
     if (indirect) {
@@ -424,8 +430,7 @@ static int _run_coap_get_series(const char *uri, unsigned count, bool indirect,
             continue;
         }
 
-        int wait_res = sema_wait_timed_ztimer(&done, ZTIMER_MSEC,
-                                              COAP_RESPONSE_WAIT_MS);
+        int wait_res = _wait_req_done(&done, COAP_RESPONSE_WAIT_MS);
         uint32_t end_us = ztimer_now(ZTIMER_USEC);
         if (wait_res < 0) {
             printf("coap: no callback before local wait timeout seq=%u msg ID %u\n",
@@ -465,25 +470,23 @@ static int _run_coap_get_poisson(const char *uri, unsigned count, bool indirect,
         puts("coap: no memory for poisson request contexts");
         return 1;
     }
+    for (unsigned i = 0; i < count; i++) {
+        req_ctx[i].seq = i + 1;
+        req_ctx[i].trace_id = i + 1;
+    }
 
     tx_indirect_state_t tx_indirect;
     sema_t *done = malloc(sizeof(*done));
     unsigned sent_count = 0;
+    unsigned drained_count = 0;
     bool leaked_state = false;
+    bool stop_sending = false;
 
     if (done == NULL) {
         puts("coap: no memory for poisson semaphore");
         free(req_ctx);
         return 1;
     }
-
-    _poisson_diag.active = true;
-    _poisson_diag.phase = "init";
-    _poisson_diag.sent_count = 0;
-    _poisson_diag.completed_count = 0;
-    _poisson_diag.last_sent_seq = 0;
-    _poisson_diag.last_completed_seq = 0;
-    _poisson_diag.last_progress_ms = ztimer_now(ZTIMER_MSEC);
 
     sema_create(done, 0);
     if (indirect) {
@@ -501,14 +504,32 @@ static int _run_coap_get_poisson(const char *uri, unsigned count, bool indirect,
     }
 
     _sleep_ms_jitter(mean_interval_ms);
-    _poisson_diag.phase = "send_loop";
 
     for (unsigned i = 0; i < count; i++) {
         coap_pkt_t pdu;
         coap_req_ctx_t *ctx = &req_ctx[i];
+
+        while ((unsigned)gcoap_op_state() > POISSON_GCOAP_SEND_OPEN_LIMIT) {
+            int wait_res = _wait_req_done(done, COAP_RESPONSE_WAIT_MS);
+            if (wait_res < 0) {
+                puts("coap: poisson wait_before_send timed out");
+                leaked_state = true;
+                stop_sending = true;
+                break;
+            }
+            drained_count++;
+            drained_count = _drain_req_done(done, drained_count, sent_count);
+        }
+
+        if (stop_sending) {
+            break;
+        }
+
         ctx->buf = malloc(CONFIG_GCOAP_PDU_BUF_SIZE);
         if (ctx->buf == NULL) {
             puts("coap: no memory for poisson request buffer");
+            ctx->send_failed = true;
+            ctx->completed = true;
             _sleep_ms_jitter(mean_interval_ms);
             continue;
         }
@@ -517,6 +538,8 @@ static int _run_coap_get_poisson(const char *uri, unsigned count, bool indirect,
                                       COAP_METHOD_GET, path);
         if (init_res < 0) {
             printf("coap: request init failed: %d\n", init_res);
+            ctx->send_failed = true;
+            ctx->completed = true;
             _free_req_buf(ctx);
             _sleep_ms_jitter(mean_interval_ms);
             continue;
@@ -524,83 +547,149 @@ static int _run_coap_get_poisson(const char *uri, unsigned count, bool indirect,
         ssize_t len = coap_opt_finish(&pdu, COAP_OPT_FINISH_NONE);
         if (len < 0) {
             printf("coap: request build failed: %d\n", (int)len);
+            ctx->send_failed = true;
+            ctx->completed = true;
             _free_req_buf(ctx);
             _sleep_ms_jitter(mean_interval_ms);
             continue;
         }
 
         ctx->done = done;
-        ctx->seq = i + 1;
         ctx->msg_id = coap_get_id(&pdu);
         ctx->response = false;
+        ctx->sent = false;
+        ctx->timeout = false;
+        ctx->send_failed = false;
+        ctx->error = false;
         ctx->async = true;
         ctx->completed = false;
         ctx->start_us = ztimer_now(ZTIMER_USEC);
-        _poisson_diag.last_sent_seq = ctx->seq;
-        _poisson_diag.last_progress_ms = ztimer_now(ZTIMER_MSEC);
 
-        printf("coap: poisson send seq=%u msg ID %u, %" PRIuSIZE " bytes\n",
-               ctx->seq, ctx->msg_id, (size_t)len);
+        printf("coap: poisson send seq=%u msg ID %u trace=%" PRIu32 ", %" PRIuSIZE " bytes\n",
+               ctx->seq, ctx->msg_id, ctx->trace_id, (size_t)len);
+        gnrc_netif_ieee802154_mac_trace_id = ctx->trace_id;
         ssize_t sent = gcoap_req_send(ctx->buf, len, &remote, NULL,
                                       _resp_handler, ctx,
                                       GCOAP_SOCKET_TYPE_UDP);
+        gnrc_netif_ieee802154_mac_trace_id = 0;
 
         if (sent <= 0) {
-            printf("coap: send failed seq=%u msg ID %u: %d, open requests: %u\n",
-                   ctx->seq, ctx->msg_id, (int)sent,
+            printf("coap: send failed seq=%u msg ID %u trace=%" PRIu32 ": %d, open requests: %u\n",
+                   ctx->seq, ctx->msg_id, ctx->trace_id, (int)sent,
                    (unsigned)gcoap_op_state());
+            ctx->send_failed = true;
             ctx->completed = true;
             _free_req_buf(ctx);
             if (indirect) {
-                printf("coap: aborting at seq=%u msg ID %u due to lower-layer backpressure\n",
-                       ctx->seq, ctx->msg_id);
+                printf("coap: aborting at seq=%u msg ID %u trace=%" PRIu32 " due to lower-layer backpressure\n",
+                       ctx->seq, ctx->msg_id, ctx->trace_id);
                 break;
             }
         }
         else {
+            ctx->sent = true;
             sent_count++;
-            _poisson_diag.sent_count = sent_count;
+        }
+
+        while (((sent_count - drained_count) >= POISSON_MAX_IN_FLIGHT) ||
+               ((unsigned)gcoap_op_state() >= POISSON_MAX_IN_FLIGHT)) {
+            int wait_res = _wait_req_done(done, COAP_RESPONSE_WAIT_MS);
+            if (wait_res < 0) {
+                puts("coap: poisson in-flight wait timed out");
+                leaked_state = true;
+                stop_sending = true;
+                break;
+            }
+            drained_count++;
+            drained_count = _drain_req_done(done, drained_count, sent_count);
+        }
+
+        if (stop_sending) {
+            break;
         }
 
         _sleep_ms_jitter(mean_interval_ms);
     }
 
-    _poisson_diag.phase = "wait_loop";
-    for (unsigned i = 0; i < sent_count; i++) {
-        int wait_res = sema_wait_timed_ztimer(done, ZTIMER_MSEC,
-                                              COAP_RESPONSE_WAIT_MS);
+    while (!stop_sending && (drained_count < sent_count)) {
+        int wait_res = _wait_req_done(done, COAP_RESPONSE_WAIT_MS);
         if (wait_res < 0) {
             puts("coap: poisson wait timed out");
             leaked_state = true;
+            stop_sending = true;
             break;
         }
+        drained_count++;
+        drained_count = _drain_req_done(done, drained_count, sent_count);
     }
 
     _tx_indirect_restore(&tx_indirect);
-    _poisson_diag.phase = "cleanup";
     unsigned completed_count = 0;
-    for (unsigned i = 0; i < sent_count; i++) {
+    unsigned response_count = 0;
+    unsigned timeout_count = 0;
+    unsigned send_failed_count = 0;
+    unsigned error_count = 0;
+    unsigned unresolved_count = 0;
+    unsigned missing_count = 0;
+    for (unsigned i = 0; i < count; i++) {
         if (req_ctx[i].completed) {
             _free_req_buf(&req_ctx[i]);
             completed_count++;
         }
+        else if (req_ctx[i].sent) {
+            unresolved_count++;
+        }
+        if (req_ctx[i].response) {
+            response_count++;
+        }
+        if (req_ctx[i].timeout) {
+            timeout_count++;
+        }
+        if (req_ctx[i].send_failed) {
+            send_failed_count++;
+        }
+        if (req_ctx[i].error) {
+            error_count++;
+        }
+        if (!req_ctx[i].response) {
+            missing_count++;
+        }
     }
-    if (completed_count < sent_count) {
+    if (unresolved_count > 0) {
         leaked_state = true;
     }
 
+    if (missing_count > 0) {
+        for (unsigned i = 0; i < count; i++) {
+            if (req_ctx[i].response) {
+                continue;
+            }
+            const char *reason = "not_sent";
+            if (req_ctx[i].timeout) {
+                reason = "timeout";
+            }
+            else if (req_ctx[i].send_failed) {
+                reason = "send_failed";
+            }
+            else if (req_ctx[i].error) {
+                reason = "error";
+            }
+            else if (req_ctx[i].sent && !req_ctx[i].completed) {
+                reason = "unresolved";
+            }
+            printf("coap: poisson missing seq=%u msg ID %u trace=%" PRIu32 " reason=%s\n",
+                   req_ctx[i].seq, req_ctx[i].msg_id, req_ctx[i].trace_id, reason);
+        }
+    }
+    printf("coap: poisson done requested=%u sent=%u completed=%u responses=%u "
+           "timeouts=%u send_failed=%u errors=%u unresolved=%u missing=%u\n",
+           count, sent_count, completed_count, response_count, timeout_count,
+           send_failed_count, error_count, unresolved_count, missing_count);
     if (!leaked_state) {
         sema_destroy(done);
         free(done);
         free(req_ctx);
     }
-    else {
-        puts("coap: poisson preserving pending callback state");
-    }
-    printf("coap: poisson done sent=%u completed=%u unresolved=%u\n",
-           sent_count, completed_count, sent_count - completed_count);
-    _poisson_diag.active = false;
-    _poisson_diag.phase = "idle";
     return 0;
 }
 
@@ -649,6 +738,9 @@ static volatile uint32_t _sleepy_interval_ms = 0;
 static volatile kernel_pid_t _sleepy_if_pid = KERNEL_PID_UNDEF;
 static volatile uint32_t _sleepy_awake_until_ms = 0;
 static volatile uint32_t _sleepy_awake_started_ms = 0;
+static volatile uint32_t _sleepy_poll_count = 0;
+static volatile uint32_t _sleepy_last_poll_ms = 0;
+static volatile int _sleepy_last_poll_res = 0;
 static volatile bool _sleepy_poll_interval_valid = false;
 static volatile uint32_t _sleepy_poll_interval_ms = 0;
 static char _sleepy_stack[THREAD_STACKSIZE_DEFAULT];
@@ -766,8 +858,13 @@ static void _sleepy_wait_awake_window(uint32_t timeout_ms)
 
 static void _sleepy_poll(void)
 {
+    int res = -ENODEV;
+    _sleepy_poll_count++;
+    _sleepy_last_poll_ms = ztimer_now(ZTIMER_MSEC);
+
     ieee802154_mac_t *mac = gnrc_netif_ieee802154_mac_get();
     if (mac == NULL) {
+        _sleepy_last_poll_res = res;
         return;
     }
 
@@ -780,13 +877,14 @@ static void _sleepy_poll(void)
     ieee802154_mac_mlme_get_request(mac, IEEE802154_PIB_COORD_EXTENDED_ADDRESS, &coord_ext);
 
     if (coord_short.v.short_addr.u16 != 0xffff) {
-        (void)ieee802154_mac_mlme_poll(mac, IEEE802154_ADDR_MODE_SHORT,
-                                       panid.v.u16, &coord_short.v.short_addr);
+        res = ieee802154_mac_mlme_poll(mac, IEEE802154_ADDR_MODE_SHORT,
+                                        panid.v.u16, &coord_short.v.short_addr);
     }
     else {
-        (void)ieee802154_mac_mlme_poll(mac, IEEE802154_ADDR_MODE_EXTENDED,
-                                       panid.v.u16, &coord_ext.v.ext_addr);
+        res = ieee802154_mac_mlme_poll(mac, IEEE802154_ADDR_MODE_EXTENDED,
+                                        panid.v.u16, &coord_ext.v.ext_addr);
     }
+    _sleepy_last_poll_res = res;
 }
 
 static void *_sleepy_thread(void *arg)
@@ -799,7 +897,7 @@ static void *_sleepy_thread(void *arg)
 
     while (_sleepy_run) {
         if (_sleepy_set_off(_sleepy_if_pid) < 0) {
-            _sleepy_wait_awake_window(SLEEPY_ACTIVITY_GUARD_MS);
+            ztimer_sleep(ZTIMER_MSEC,SLEEPY_ACTIVITY_GUARD_MS);
             continue;
         }
 
@@ -814,8 +912,8 @@ static void *_sleepy_thread(void *arg)
             continue;
         }
 
+        ztimer_sleep(ZTIMER_MSEC, SLEEPY_WAKE_SETTLE_MS);
         _sleepy_poll();
-        _sleepy_wait_awake_window(SLEEPY_AWAKE_TIMEOUT_MS);
     }
 
     (void)_sleepy_set_idle_retry(_sleepy_if_pid);
@@ -826,6 +924,85 @@ static void *_sleepy_thread(void *arg)
 
 static int _cmd_duty(int argc, char **argv)
 {
+
+    if (argc >= 5 && argc <= 6 && strcmp(argv[1], "rtt") == 0) {
+        char *end = NULL;
+        unsigned long interval = strtoul(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0') {
+            return 1;
+        }
+
+        const char *uri = argv[3];
+        unsigned count = (unsigned)atoi(argv[4]);
+        if (count == 0) {
+            count = 1;
+        }
+
+        gnrc_netif_t *netif = NULL;
+        if (argc == 6) {
+            kernel_pid_t pid = (kernel_pid_t)atoi(argv[5]);
+            netif = gnrc_netif_get_by_pid(pid);
+        }
+        else {
+            netif = gnrc_netif_iter(NULL);
+        }
+        if (netif == NULL) {
+            return 1;
+        }
+
+        memset(&_duty_rtt, 0, sizeof(_duty_rtt));
+        strncpy(_duty_rtt.uri, uri, sizeof(_duty_rtt.uri) - 1);
+        _duty_rtt.requested = count;
+
+        if (interval == 0) {
+            _sleepy_if_pid = netif->pid;
+            (void)_sleepy_set_idle_retry(_sleepy_if_pid);
+            return 0;
+        }
+
+        sema_create(&_duty_rtt.done, 0);
+        _duty_rtt.active = true;
+
+        _sleepy_interval_ms = (uint32_t)interval;
+        _sleepy_if_pid = netif->pid;
+        _sleepy_disable_periodic_poll(_sleepy_if_pid);
+        _sleepy_run = true;
+
+        if (_sleepy_pid == KERNEL_PID_UNDEF) {
+            _sleepy_pid = thread_create(_sleepy_stack, sizeof(_sleepy_stack),
+                                        THREAD_PRIORITY_MAIN - 1, 0,
+                                        _sleepy_thread, NULL, "sleepy");
+            if (_sleepy_pid <= KERNEL_PID_UNDEF) {
+                _sleepy_pid = KERNEL_PID_UNDEF;
+                _sleepy_run = false;
+                _duty_rtt.active = false;
+                sema_destroy(&_duty_rtt.done);
+                return 1;
+            }
+        }
+
+        uint32_t timeout_ms = count * ((uint32_t)interval + COAP_RESPONSE_WAIT_MS +
+                                       SLEEPY_ACTIVE_WINDOW_MS + 100U);
+        int wait_res = _wait_req_done(&_duty_rtt.done, timeout_ms);
+        if (wait_res < 0) {
+            _duty_rtt.active = false;
+        }
+
+        _sleepy_run = false;
+        (void)_sleepy_set_idle_retry(_sleepy_if_pid);
+        _sleepy_restore_periodic_poll(_sleepy_if_pid);
+
+        unsigned completed = _duty_rtt.responses + _duty_rtt.timeouts +
+                             _duty_rtt.send_failed;
+        unsigned missing = count - _duty_rtt.responses;
+        printf("coap: duty rtt done requested=%u completed=%u responses=%u "
+               "timeouts=%u send_failed=%u missing=%u\n",
+               count, completed, _duty_rtt.responses, _duty_rtt.timeouts,
+               _duty_rtt.send_failed, missing);
+        sema_destroy(&_duty_rtt.done);
+        return wait_res < 0 ? 1 : 0;
+    }
+
     if (argc == 2 && strcmp(argv[1], "stop") == 0) {
         _sleepy_run = false;
         int res = _sleepy_set_idle_retry(_sleepy_if_pid);
@@ -838,7 +1015,8 @@ static int _cmd_duty(int argc, char **argv)
     }
 
     if (argc < 2 || argc > 3) {
-        printf("usage: %s <interval_ms> [iface_pid]\n", argv[0]);
+        printf("usage: %s <interval_ms> [iface_pid] | %s rtt <interval_ms> <coap://[addr]/path> <count> [iface_pid]\n",
+               argv[0], argv[0]);
         return 1;
     }
 
@@ -985,7 +1163,7 @@ static const shell_command_t _commands[] = {
     { "coap", "coap get [-i] <coap://[addr]/path>", _cmd_coap },
     { "rtt", "rtt [-i] <coap://[addr]/path> <count> <start_jitter_max_ms> <request_jitter_max_ms>", _cmd_rtt },
     { "poisson", "poisson [-i] <coap://[addr]/path> <count> <mean_interval_ms>", _cmd_poisson },
-    { "duty", "duty <interval_ms> [iface_pid] | duty stop", _cmd_duty },
+    { "duty", "duty <interval_ms> [iface_pid] | duty rtt <interval_ms> <coap://[addr]/path> <count> [iface_pid] | duty stop", _cmd_duty },
     { "indirect", "indirect on|off [iface_pid]", _cmd_indirect },
     { NULL, NULL, NULL }
 };
@@ -1042,14 +1220,11 @@ int main(void)
     gcoap_register_listener(&_listener);
     _auto_add_link_local();
     msg_init_queue(_main_msg_queue, MAIN_QUEUE_SIZE);
-    if (_poisson_diag_pid == KERNEL_PID_UNDEF) {
-        _poisson_diag_pid = thread_create(_poisson_diag_stack,
-                                          sizeof(_poisson_diag_stack),
-                                          THREAD_PRIORITY_MAIN - 2, 0,
-                                          _poisson_diag_thread, NULL,
-                                          "poisson_diag");
-    }
     char line_buf[COAP_SHELL_BUFSIZE];
     shell_run(_commands, line_buf, COAP_SHELL_BUFSIZE);
+    while (1){
+        puts("test\n");
+        ztimer_sleep(ZTIMER_MSEC, 1000);
+    }
     return 0;
 }
