@@ -31,10 +31,9 @@
         (sizeof("00:00:00:00:00:00:00:00"))
 #define IEEE802154_SCAN_PAYLOAD_PRINT_MAX (16U)
 #define SLEEPY_DATA_INDICATION_WAIT_MS   10U
-#define SLEEPY_WAKE_SETTLE_MS            10U
-#define SLEEPY_OFF_RETRY_DELAY_MS        10U
+#define SLEEPY_OFF_RETRY_DELAY_MS        1U
 #define SLEEPY_OFF_RETRIES               20U
-#define SLEEPY_RESPONSE_CONFIRM_TIMEOUT_MS 250U
+#define SLEEPY_RESPONSE_CONFIRM_TIMEOUT_MS 10U
 #define SLEEPY_STOP_WAIT_MS              500U
 #define RX_RETRY_DELAY_MS                1U
 #define RX_RETRIES                       20U
@@ -1044,7 +1043,6 @@ static void *sleepy_thread(void *arg)
             continue;
         }
 
-        ztimer_sleep(ZTIMER_MSEC, SLEEPY_WAKE_SETTLE_MS);
         sleepy_poll_once();
         /* If the poll triggers an indirect frame, data_indication schedules the
          * response and the response confirm releases us to sleep. */
