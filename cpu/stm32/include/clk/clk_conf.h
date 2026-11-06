@@ -23,6 +23,8 @@
 #include "f2f4f7/cfg_clock_default.h"
 #elif defined(CPU_FAM_STM32G0) || defined(CPU_FAM_STM32G4)
 #include "g0g4/cfg_clock_default.h"
+#elif defined(CPU_FAM_STM32H7)
+#include "h7/cfg_clock_default.h"
 #elif defined(CPU_FAM_STM32C0)
 #include "c0/cfg_clock_default.h"
 #elif defined(CPU_FAM_STM32L0) || defined(CPU_FAM_STM32L1)
@@ -30,6 +32,8 @@
 #elif defined(CPU_FAM_STM32L4) || defined(CPU_FAM_STM32L5) || \
       defined(CPU_FAM_STM32WB) || defined(CPU_FAM_STM32WL)
 #include "l4l5wx/cfg_clock_default.h"
+#elif defined(CPU_FAM_STM32U3)
+#include "u3/cfg_clock_default.h"
 #elif defined(CPU_FAM_STM32U5)
 #include "u5/cfg_clock_default.h"
 #elif defined(CPU_FAM_STM32MP1)

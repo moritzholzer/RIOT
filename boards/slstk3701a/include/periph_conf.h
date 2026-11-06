@@ -17,6 +17,7 @@
  */
 
 #include "cpu.h"
+#include "mii.h"
 #include "periph_cpu.h"
 #include "em_cmu.h"
 #include "usbdev_cfg_otg_fs.h"
@@ -110,19 +111,21 @@ static const i2c_conf_t i2c_config[] = {
         .scl_pin = GPIO_PIN(PC, 1),
         .loc = I2C_ROUTELOC0_SDALOC_LOC4 |
                I2C_ROUTELOC0_SCLLOC_LOC4,
+        .speed = I2C_SPEED_NORMAL,
         .cmu = cmuClock_I2C0,
         .irq = I2C0_IRQn,
-        .speed = I2C_SPEED_NORMAL
+        .use_internal_pull_ups = true
     },
     {
         .dev = I2C1,
-        .sda_pin = GPIO_PIN(PC, 7),
+        .sda_pin = GPIO_PIN(PC, 4),
         .scl_pin = GPIO_PIN(PC, 5),
         .loc = I2C_ROUTELOC0_SDALOC_LOC0 |
                I2C_ROUTELOC0_SCLLOC_LOC0,
+        .speed = I2C_SPEED_NORMAL,
         .cmu = cmuClock_I2C1,
         .irq = I2C1_IRQn,
-        .speed = I2C_SPEED_NORMAL
+        .use_internal_pull_ups = true
     },
     {
         .dev = I2C2,
@@ -130,9 +133,10 @@ static const i2c_conf_t i2c_config[] = {
         .scl_pin = GPIO_PIN(PI, 5),
         .loc = I2C_ROUTELOC0_SDALOC_LOC7 |
                I2C_ROUTELOC0_SCLLOC_LOC7,
+        .speed = I2C_SPEED_NORMAL,
         .cmu = cmuClock_I2C2,
         .irq = I2C2_IRQn,
-        .speed = I2C_SPEED_NORMAL
+        .use_internal_pull_ups = true
     }
 };
 
@@ -166,6 +170,17 @@ static const spi_dev_t spi_config[] = {
                USART_ROUTELOC0_CLKLOC_LOC0,
         .cmu = cmuClock_USART0,
         .irq = USART0_RX_IRQn
+    },
+    {
+        .dev = USART1,
+        .mosi_pin = GPIO_PIN(PA, 14),
+        .miso_pin = GPIO_PIN(PC, 2),
+        .clk_pin = GPIO_PIN(PC, 15),
+        .loc = USART_ROUTELOC0_TXLOC_LOC6 |
+               USART_ROUTELOC0_RXLOC_LOC4 |
+               USART_ROUTELOC0_CLKLOC_LOC3,
+        .cmu = cmuClock_USART1,
+        .irq = USART1_RX_IRQn
     }
 };
 
@@ -251,6 +266,22 @@ static const uart_conf_t uart_config[] = {
 #define UART_NUMOF          ARRAY_SIZE(uart_config)
 #define UART_0_ISR_RX       isr_usart4_rx
 #define UART_1_ISR_RX       isr_usart5_rx
+/** @} */
+
+/**
+ * @name    Ethernet (RMII) configuration
+ *
+ * The SLSTK3701A wires the EFM32GG11 ETH peripheral to a Microchip
+ * KSZ8091-RNDCA PHY at MIIM address 0.
+ * @{
+ */
+static const eth_conf_t eth_config = {
+    .phy_en_pin = GPIO_PIN(PI, 10),
+    .phy_rst_pin = GPIO_UNDEF,
+    .routeloc1 = ETH_ROUTELOC1_RMIILOC_LOC1 | ETH_ROUTELOC1_MDIOLOC_LOC1,
+    .speed = MII_BMCR_SPEED_100 | MII_BMCR_FULL_DPLX,
+    .phy_addr = 0, /* Microchip KSZ8091-RNDCA */
+};
 /** @} */
 
 #ifdef __cplusplus

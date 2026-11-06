@@ -1,10 +1,7 @@
 /*
- * Copyright (C) 2014 INRIA
- * Copyright (C) 2015-2016 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2014 INRIA
+ * SPDX-FileCopyrightText: 2015-2016 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -299,12 +296,6 @@ static int _set_addr(xbee_t *dev, const uint8_t *val, size_t len)
 
     addr[0] = val[0];
     addr[1] = val[1];
-
-#ifdef MODULE_SIXLOWPAN
-    /* https://tools.ietf.org/html/rfc4944#section-12 requires the first bit
-     * to 0 for unicast addresses */
-    addr[1] &= 0x7F;
-#endif
 
     if (dev->addr_flags & XBEE_ADDR_FLAGS_LONG ||
         _set_short_addr(dev, addr) == 0) {

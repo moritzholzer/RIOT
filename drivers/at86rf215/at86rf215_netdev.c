@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2019 ML!PA Consulting GmbH
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2019 ML!PA Consulting GmbH
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -359,16 +356,6 @@ static int _get(netdev_t *netdev, netopt_t opt, void *val, size_t max_len)
             *((netopt_enable_t *)val) =
                 !!(dev->flags & AT86RF215_OPT_AUTOACK);
             return sizeof(netopt_enable_t);
-
-        case NETOPT_CHANNEL_PAGE:
-            assert(max_len >= sizeof(uint16_t));
-            if (at86rf215_get_phy_mode(dev) != IEEE802154_PHY_OQPSK) {
-                return -ENOTSUP;
-            }
-
-            ((uint8_t *)val)[1] = 0;
-            ((uint8_t *)val)[0] = is_subGHz(dev) ? 2 : 0;
-            return sizeof(uint16_t);
 
         case NETOPT_AUTOCCA:
             *((netopt_enable_t *)val) =
@@ -859,12 +846,6 @@ static void _tx_end(at86rf215_t *dev)
 {
     netdev_t *netdev = &dev->netdev.netdev;
 
-    /* listen to non-ACK packets again */
-    if (dev->flags & AT86RF215_OPT_ACK_REQUESTED) {
-        dev->flags &= ~AT86RF215_OPT_ACK_REQUESTED;
-        at86rf215_filter_ack(dev, false);
-    }
-
     at86rf215_tx_done(dev);
 
     if (netdev->event_callback) {
@@ -905,7 +886,9 @@ static void _set_idle(at86rf215_t *dev)
 
     uint8_t next_state;
 
-    if (dev->flags & AT86RF215_OPT_TX_PENDING) {
+    /* Check both TX_PENDING flag AND ensure no frame reception is ongoing (AGCH)
+     * to prevent TXPREP during frame reception */
+    if ((dev->flags & AT86RF215_OPT_TX_PENDING) && !(dev->flags & AT86RF215_OPT_AGCH)) {
         next_state = CMD_RF_TXPREP;
     } else {
         next_state = CMD_RF_RX;
@@ -1014,7 +997,6 @@ static void _handle_edc(at86rf215_t *dev)
         dev->state = AT86RF215_STATE_IDLE;
 
         at86rf215_enable_baseband(dev);
-        at86rf215_enable_rpc(dev);
         at86rf215_tx_done(dev);
 
         /* signal error to confirm_send */
@@ -1053,6 +1035,15 @@ static void _isr(netdev_t *netdev)
     /* clear AGC Hold bit */
     if (bb_irq_mask & BB_IRQ_AGCR) {
         dev->flags &= ~AT86RF215_OPT_AGCH;
+
+        /* Reception ended without a frame (RXFE): resume a TX that tx_exec
+         * deferred because AGCH was set, otherwise it would stall until the
+         * next send. A successful reception (RXFE) resumes it via _set_idle(). */
+        if (!(bb_irq_mask & BB_IRQ_RXFE) &&
+            (dev->state == AT86RF215_STATE_IDLE) &&
+            (dev->flags & AT86RF215_OPT_TX_PENDING)) {
+            at86rf215_rf_cmd(dev, CMD_RF_TXPREP);
+        }
     }
 
     /* we got here because of CMSA timeout */
@@ -1109,7 +1100,10 @@ static void _isr(netdev_t *netdev)
         /* Start ED or handle result */
         if (rf_irq_mask & RF_IRQ_EDC) {
             _handle_edc(dev);
-        } else if (rf_irq_mask & RF_IRQ_TRXRDY) {
+        }
+        /* A concurrent RXFE would mean that this TRXRDY belongs to the auto-ACK
+         * of a received frame; defer CCA so the reception/ACK completes first. */
+        else if ((rf_irq_mask & RF_IRQ_TRXRDY) && !(bb_irq_mask & BB_IRQ_RXFE)) {
             /* disable baseband for energy detection */
             at86rf215_disable_baseband(dev);
             at86rf215_disable_rpc(dev);

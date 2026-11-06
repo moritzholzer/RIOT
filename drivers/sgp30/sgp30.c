@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2021 Inria
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2021 Inria
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -190,7 +187,10 @@ int sgp30_init(sgp30_t *dev, const sgp30_params_t *params)
 
     /* read future set */
     uint16_t version;
-    sgp30_read_future_set(dev, &version);
+    if (sgp30_read_future_set(dev, &version) < 0) {
+        DEBUG_PUTS("[sgp30]: could not read feature set version");
+        return -1;
+    }
     if (version < SGP30_REQUIRED_FEATURE_SET) {
         DEBUG("[sgp30]: wrong version number, %04x instead of %04x\n",
               version, SGP30_REQUIRED_FEATURE_SET);

@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2021 ML!PA Consulting GmbH
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2021 ML!PA Consulting GmbH
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -82,7 +79,7 @@ int netutils_get_ipv6(ipv6_addr_t *addr, netif_t **netif, const char *hostname)
 
     /* search for interface ID */
     size_t len = strlen(hostname);
-    char *iface = strchr(hostname, '%');
+    const char *iface = strchr(hostname, '%');
     if (iface) {
         *netif = netif_get_by_name(iface + 1);
         len -= strlen(iface);

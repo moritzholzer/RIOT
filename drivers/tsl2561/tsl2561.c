@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2016 Inria
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2016 Inria
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -60,11 +57,16 @@ int tsl2561_init(tsl2561_t *dev, const tsl2561_params_t *params)
 
     /* Verify sensor ID */
     uint8_t id;
-    i2c_read_reg(DEV_I2C, DEV_ADDR,
-                 TSL2561_COMMAND_MODE | TSL2561_REGISTER_ID, &id, 0);
+    if (i2c_read_reg(DEV_I2C, DEV_ADDR,
+                     TSL2561_COMMAND_MODE | TSL2561_REGISTER_ID, &id, 0) < 0) {
+        DEBUG("[Error] could not read sensor ID\n");
+        i2c_release(DEV_I2C);
+        return TSL2561_NOI2C;
+    }
     DEBUG("[Info] ID ? %d\n", id);
     if (id != TSL2561_ID ) {
         DEBUG("[Error] not a TSL2561 sensor\n");
+        i2c_release(DEV_I2C);
         return TSL2561_BADDEV;
     }
 

@@ -30,6 +30,9 @@ PHDRS
   tls PT_TLS;
 }
 
+/* Section alignment follows the word size: 4 on rv32, 8 on rv64 (set via --defsym) */
+_riscv_word_bytes = DEFINED(_riscv_word_bytes) ? _riscv_word_bytes : 4;
+
 SECTIONS
 {
   __stack_size     = DEFINED(__stack_size) ? __stack_size : 256;
@@ -41,6 +44,13 @@ SECTIONS
 
   .text           :
   {
+    /*
+     * Keep picobin block used by RP2350.
+     * This gives the Pico2 bootloader metadata about the
+     * exact configuration we are trying to run.
+     * E.g. secure mode, riscv, arm, etc.
+     */
+    KEEP(*(SORT(.picobin_block*)))
     *(.text.unlikely .text.unlikely.*)
     *(.text.startup .text.startup.*)
     *(.text .text.*)
@@ -160,13 +170,13 @@ SECTIONS
 
   .lalign         :
   {
-    . = ALIGN(4);
+    . = ALIGN(_riscv_word_bytes);
     PROVIDE( _data_lma = . );
   } >flash AT>flash :flash
 
   .dalign         :
   {
-    . = ALIGN(4);
+    . = ALIGN(_riscv_word_bytes);
     PROVIDE( _data = . );
   } >ram AT>flash :ram_init
 
@@ -188,7 +198,7 @@ SECTIONS
     KEEP (*(SORT(.xfa.*)))
   } >ram AT>flash :ram_init
 
-  . = ALIGN(4);
+  . = ALIGN(_riscv_word_bytes);
   PROVIDE( _edata = . );
   PROVIDE( edata = . );
 
@@ -201,7 +211,7 @@ SECTIONS
     *(.bss .bss.*)
     *(.gnu.linkonce.b.*)
     *(COMMON)
-    . = ALIGN(4);
+    . = ALIGN(_riscv_word_bytes);
   } >ram AT>ram :ram
   PROVIDE( __bss_end = . );
 

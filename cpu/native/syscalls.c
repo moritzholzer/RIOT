@@ -43,6 +43,7 @@
 /* This header defines the system call function pointers */
 #define NATIVE_SYSCALLS_DEFINITION 1
 #include "native_internal.h"
+#include "malloc_monitor_internal.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"
@@ -90,7 +91,7 @@ void _native_syscall_leave(void)
 /* make use of TLSF if it is included, except when building with valgrind
  * support, where one probably wants to make use of valgrind's memory leak
  * detection abilities*/
-#if (!(defined MODULE_TLSF) && !(defined NATIVE_MEMORY)) || (defined(HAVE_VALGRIND_H))
+#if (!(defined MODULE_TLSF) && !(defined NATIVE_MEMORY)) || (defined(HAVE_VALGRIND))
 int _native_in_malloc = 0;
 void *malloc(size_t size)
 {
@@ -114,6 +115,9 @@ void *malloc(size_t size)
     _native_syscall_enter();
     r = real_malloc(size);
     _native_syscall_leave();
+    if (IS_USED(MODULE_MALLOC_MONITOR)) {
+        malloc_monitor_add(r, size, cpu_get_caller_pc(), "m");
+    }
     return r;
 }
 
@@ -122,6 +126,9 @@ void free(void *ptr)
     _native_syscall_enter();
     real_free(ptr);
     _native_syscall_leave();
+    if (IS_USED(MODULE_MALLOC_MONITOR)) {
+        malloc_monitor_rm(ptr, cpu_get_caller_pc());
+    }
 }
 
 int _native_in_calloc = 0;
@@ -146,6 +153,9 @@ void *calloc(size_t nmemb, size_t size)
     _native_syscall_enter();
     r = real_calloc(nmemb, size);
     _native_syscall_leave();
+    if (IS_USED(MODULE_MALLOC_MONITOR)) {
+        malloc_monitor_add(r, nmemb*size, cpu_get_caller_pc(), "c");
+    }
     return r;
 }
 
@@ -155,9 +165,12 @@ void *realloc(void *ptr, size_t size)
     _native_syscall_enter();
     r = real_realloc(ptr, size);
     _native_syscall_leave();
+    if (IS_USED(MODULE_MALLOC_MONITOR)) {
+        malloc_monitor_mv(ptr, r, size, cpu_get_caller_pc());
+    }
     return r;
 }
-#endif /* !(defined MODULE_TLSF) || (defined(HAVE_VALGRIND_H)) */
+#endif /* !(defined MODULE_TLSF) || (defined(HAVE_VALGRIND)) */
 
 ssize_t _native_read(int fd, void *buf, size_t count)
 {
@@ -250,7 +263,12 @@ int fputs(const char *s, FILE *fp)
 
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *fp)
 {
-    return _native_write(fileno(fp), ptr, size * nmemb);
+    ssize_t r = _native_write(fileno(fp), ptr, size * nmemb);
+
+    if (r < 0 || size == 0) {
+        return 0;
+    }
+    return (size_t)r / size;
 }
 #endif
 
@@ -447,8 +465,7 @@ void errx(int eval, const char *fmt, ...)
 
 int getpid(void)
 {
-    warnx("getpid(): not implemented");
-    return -1;
+    return real_getpid();
 }
 
 #if (IS_USED(MODULE_LIBC_GETTIMEOFDAY))

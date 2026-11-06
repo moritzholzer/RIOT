@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2016 Inria
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2016 Inria
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -57,7 +54,11 @@ int bmp180_init(bmp180_t *dev, const bmp180_params_t *params)
 
     /* Check sensor ID */
     uint8_t checkid;
-    i2c_read_reg(DEV_I2C, DEV_ADDR, BMP180_REGISTER_ID, &checkid, 0);
+    if (i2c_read_reg(DEV_I2C, DEV_ADDR, BMP180_REGISTER_ID, &checkid, 0) < 0) {
+        DEBUG("[Error] Cannot read device ID\n");
+        i2c_release(DEV_I2C);
+        return -BMP180_ERR_NODEV;
+    }
     if (checkid != 0x55) {
         DEBUG("[Error] Wrong device ID\n");
         i2c_release(DEV_I2C);

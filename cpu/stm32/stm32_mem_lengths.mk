@@ -204,7 +204,20 @@ else ifeq ($(STM32_TYPE), G)
     else ifeq ($(STM32_MODEL), 474)
       RAM_LEN = 96K
       CCMRAM_LEN = 32K
+    else ifeq ($(STM32_MODEL), 491)
+      RAM_LEN = 96K
+      CCRAM_LEN = 16K
     endif
+  endif
+else ifeq ($(STM32_TYPE), H)
+  RAM_START_ADDR = 0x24000000
+  ifeq ($(STM32_MODEL), 723)
+    RAM_LEN = 320K
+  else ifeq ($(STM32_MODEL), 753)
+    RAM_LEN = 512K
+    ROM_LEN = 2048K     # 2 MB Flash
+    BACKUP_RAM_ADDR = 0x38800000
+    BACKUP_RAM_LEN = 0x4K
   endif
 else ifeq ($(STM32_TYPE), L)
   ifeq ($(STM32_FAMILY), 0)
@@ -281,7 +294,11 @@ else ifeq ($(STM32_TYPE), L)
     endif
   endif
 else ifeq ($(STM32_TYPE), U)
-  ifeq ($(STM32_FAMILY), 5)
+  ifeq ($(STM32_FAMILY), 3)
+    ifneq (, $(filter $(STM32_MODEL2), 7 8))
+      RAM_LEN = 256K
+    endif
+  else ifeq ($(STM32_FAMILY), 5)
     ifneq (, $(filter $(STM32_MODEL2), 7 8))
       RAM_LEN = 768K
       SRAM4_LEN = 16K

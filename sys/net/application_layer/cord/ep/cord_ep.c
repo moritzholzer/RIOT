@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2017-2018 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2017-2018 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -86,7 +83,7 @@ static void _on_register(const gcoap_request_memo_t *memo, coap_pkt_t* pdu,
     if ((memo->state == GCOAP_MEMO_RESP) &&
         (coap_get_code_raw(pdu) == COAP_CODE_CREATED)) {
         /* read the location header and save the RD details on success */
-        if (coap_get_location_path(pdu, (uint8_t *)_rd_loc,
+        if (coap_get_location_path(pdu, _rd_loc,
                                    sizeof(_rd_loc)) > 0) {
             memcpy(&_rd_remote, remote, sizeof(_rd_remote));
             flag = FLAG_SUCCESS;
@@ -260,11 +257,13 @@ int cord_ep_register(const sock_udp_ep_t *remote, const char *regif)
         }
     }
     else {
-        if (strlen(_rd_regif) >= sizeof(_rd_regif)) {
+        size_t regif_len = strlen(regif);
+        if (regif_len >= sizeof(_rd_regif)) {
             retval = CORD_EP_OVERFLOW;
             goto end;
         }
-        strncpy(_rd_regif, regif, sizeof(_rd_regif));
+
+        memcpy(_rd_regif, regif, regif_len + 1);
     }
 
     /* build and send CoAP POST request to the RD's registration interface */

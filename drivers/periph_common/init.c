@@ -1,10 +1,7 @@
 /*
- * Copyright (C) 2017 Freie Universität Berlin
- *               2017 Kaspar Schleiser <kaspar@schleiser.de>
- *
- * This file is subject to the terms and conditions of the GNU Lesser General
- * Public License v2.1. See the file LICENSE in the top level directory for more
- * details.
+ * SPDX-FileCopyrightText: 2017 Freie Universität Berlin
+ * SPDX-FileCopyrightText: 2017 Kaspar Schleiser <kaspar@schleiser.de>
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -81,8 +78,9 @@ void periph_init(void)
         extern void button_init(void);
         button_init();
     }
-    /* initialize configured I2C devices */
-#ifdef MODULE_PERIPH_INIT_I2C
+    /* initialize configured I2C devices, PIO I2C devices are initialized
+     * after the PIO peripheral below */
+#if defined(MODULE_PERIPH_INIT_I2C) && !defined(MODULE_PIO_I2C)
     for (unsigned i = 0; i < I2C_NUMOF; i++) {
         i2c_init(I2C_DEV(i));
     }
@@ -135,9 +133,9 @@ void periph_init(void)
     for (int i = 0; i < (int)PIO_NUMOF; i++) {
         pio_init(PIO_DEV(i));
     }
-#if defined(MODULE_PERIPH_INIT_I2C) && defined(PIO_I2C_NUMOF)
-    for (unsigned i = 0; i < PIO_I2C_NUMOF; i++) {
-        i2c_init(I2C_DEV(I2C_NUMOF + i));
+#if defined(MODULE_PERIPH_INIT_I2C) && defined(MODULE_PIO_I2C)
+    for (unsigned i = 0; i < I2C_NUMOF; i++) {
+        i2c_init(I2C_DEV(i));
     }
 #endif
     pio_start_programs();

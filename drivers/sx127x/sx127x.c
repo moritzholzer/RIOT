@@ -1,11 +1,8 @@
 /*
- * Copyright (C) 2016 Unwired Devices <info@unwds.com>
- *               2017 Inria Chile
- *               2017 Inria
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2016 Unwired Devices <info@unwds.com>
+ * SPDX-FileCopyrightText: 2017 Inria Chile
+ * SPDX-FileCopyrightText: 2017 Inria
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -63,7 +60,7 @@
 /* Internal functions */
 static int _init_spi(sx127x_t *dev);
 static int _init_gpios(sx127x_t *dev);
-static void _init_timers(sx127x_t *dev);
+static void _init_timer_callbacks(sx127x_t *dev);
 static void _on_tx_timeout(void *arg);
 static void _on_rx_timeout(void *arg);
 
@@ -129,6 +126,9 @@ int sx127x_reset(const sx127x_t *dev)
 
 int sx127x_init(sx127x_t *dev)
 {
+    /* the timers have to work even if the hardware init fails */
+    _init_timer_callbacks(dev);
+
     /* Do internal initialization routines */
     if (_init_spi(dev) < 0) {
         DEBUG("[sx127x] error: failed to initialize SPI\n");
@@ -140,8 +140,6 @@ int sx127x_init(sx127x_t *dev)
         DEBUG("[sx127x] error: no valid device found\n");
         return -SX127X_ERR_NODEV;
     }
-
-    _init_timers(dev);
 
     if (gpio_is_valid(dev->params.reset_pin)) {
         /* reset pin should be left floating during POR */
@@ -328,7 +326,7 @@ static void _on_rx_timeout(void *arg)
     dev->event_callback(dev, NETDEV_EVENT_RX_TIMEOUT);
 }
 
-static void _init_timers(sx127x_t *dev)
+static void _init_timer_callbacks(sx127x_t *dev)
 {
     dev->_internal.tx_timeout_timer.arg = dev;
     dev->_internal.tx_timeout_timer.callback = _on_tx_timeout;

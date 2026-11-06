@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2022 ML!PA Consulting GmbH
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2022 ML!PA Consulting GmbH
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -88,6 +85,30 @@ void reverse_buf(void *buf, size_t len)
         uint8_t tmp = *cur;
         *cur++ = *end;
         *end-- = tmp;
+    }
+}
+
+void memxor(void *dst, void* src, size_t size)
+{
+    uint8_t *d = (uint8_t *)dst;
+    uint8_t *s = (uint8_t *)src;
+    if (d <= s) {
+        for (size_t i = 0; i < size; i++) {
+            d[i] ^= s[i];
+        }
+    }
+    else {
+        for (size_t i = size; i > 0; i--) {
+            d[i - 1] ^= s[i - 1];
+        }
+    }
+}
+
+void memcpy_reversed(void *restrict dst, const void *restrict src, size_t size)
+{
+    size_t s = 0;
+    while (size--) {
+        ((uint8_t *)dst)[s++] = ((const uint8_t *)src)[size];
     }
 }
 

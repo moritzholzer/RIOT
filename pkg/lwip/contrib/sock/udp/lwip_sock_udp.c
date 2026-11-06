@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2016 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2016 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -144,7 +141,7 @@ ssize_t sock_udp_recv_buf_aux(sock_udp_t *sock, void **data, void **ctx,
         size_t addr_len = sizeof(ipv4_addr_t);
         int family = AF_INET;
 
-        if (NETCONNTYPE_ISIPV6(sock->base.conn->type)) {
+        if (IP_IS_V6(&buf->addr)) {
             addr_len = sizeof(ipv6_addr_t);
             family = AF_INET6;
         }

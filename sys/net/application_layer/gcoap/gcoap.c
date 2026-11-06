@@ -810,7 +810,7 @@ static size_t _handle_req(gcoap_socket_t *sock, coap_pkt_t *pdu, uint8_t *buf,
 
 static const coap_resource_t *_match_resource_path_iterator(const gcoap_listener_t *listener,
                                                             const coap_resource_t *last,
-                                                            const uint8_t *uri_path)
+                                                            const char *uri_path)
 {
     size_t i;
     if (!last) {
@@ -834,7 +834,7 @@ static int _request_matcher_default(gcoap_listener_t *listener,
                                     const coap_resource_t **resource,
                                     coap_pkt_t *pdu)
 {
-    uint8_t uri[CONFIG_NANOCOAP_URI_MAX];
+    char uri[CONFIG_NANOCOAP_URI_MAX];
     int ret = GCOAP_RESOURCE_NO_PATH;
 
     if (coap_get_uri_path(pdu, uri) <= 0) {
@@ -946,7 +946,6 @@ static gcoap_request_memo_t* _find_req_memo_by_token(const sock_udp_ep_t *remote
         }
 
         gcoap_request_memo_t *memo = &_coap_state.open_reqs[i];
-        coap_udp_hdr_t *hdr = gcoap_request_memo_get_hdr(memo);
 
         /* verbose debug to catch bugs with request/response matching */
 #if SOCK_HAS_IPV4
@@ -963,13 +962,13 @@ static gcoap_request_memo_t* _find_req_memo_by_token(const sock_udp_ep_t *remote
               tkl);
 #endif
 
-        size_t memo_tkl = coap_hdr_get_token_len(hdr);
+        size_t memo_tkl = gcoap_request_memo_get_tkl(memo);
         if (memo_tkl != tkl) {
             DEBUG("Token length mismatch %" PRIuSIZE "\n", memo_tkl);
             continue;
         }
-        const uint8_t *memo_token = coap_hdr_get_token(hdr);
-        if (memcmp(token, memo_token, tkl)) {
+        const uint8_t *memo_token = gcoap_request_memo_get_token(memo);
+        if (memcmp(token, memo_token, tkl) != 0) {
             DEBUG("Token mismatch 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
                   memo_token[0], memo_token[1], memo_token[2], memo_token[3],
                   memo_token[4], memo_token[5], memo_token[6], memo_token[7]);
@@ -1447,9 +1446,7 @@ static ssize_t _cache_build_response(nanocoap_cache_entry_t *ce, coap_pkt_t *pdu
 
 static void _copy_hdr_from_req_memo(coap_pkt_t *pdu, gcoap_request_memo_t *memo)
 {
-    const coap_udp_hdr_t *hdr = gcoap_request_memo_get_hdr(memo);
-    size_t hdr_len = coap_hdr_len(hdr);
-    memcpy(pdu->hdr, hdr, hdr_len);
+    memcpy(pdu->buf, gcoap_request_memo_get_buf(memo), gcoap_request_memo_get_hdr_len(memo));
 }
 
 static void _receive_from_cache_cb(void *ctx)
@@ -1672,7 +1669,7 @@ const coap_resource_t *gcoap_get_resource_by_path_iterator(const gcoap_listener_
     const coap_resource_t *resource = last_resource;
 
     while (listener) {
-        if ((resource = _match_resource_path_iterator(listener, resource, (const uint8_t *)uri_path))) {
+        if ((resource = _match_resource_path_iterator(listener, resource, uri_path))) {
             *last_listener = listener;
             return resource;
         }

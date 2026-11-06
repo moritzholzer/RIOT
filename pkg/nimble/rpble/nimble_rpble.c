@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2019-2021 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2019-2021 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -356,8 +353,12 @@ int nimble_rpble_eventcb(nimble_netif_eventcb_t cb)
 
 int nimble_rpble_update(const nimble_rpble_ctx_t *ctx)
 {
-    assert(ctx != NULL);
     int ret = 0;
+
+    if (ctx == NULL) {
+        memset(&_local_rpl_ctx, 0, sizeof(_local_rpl_ctx));
+        return ret;
+    }
 
     /* if the update context is equal to what we have, ignore it */
     if (memcmp(&_local_rpl_ctx, ctx, sizeof(nimble_rpble_ctx_t)) == 0) {

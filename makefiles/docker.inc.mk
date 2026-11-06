@@ -5,7 +5,8 @@
 # When the docker image is updated, checks at
 # dist/tools/buildsystem_sanity_check/check.sh start complaining in CI, and
 # provide the latest values to verify and fill in.
-DOCKER_TESTED_IMAGE_REPO_DIGEST := 08fa7da2c702ac4db7cf57c23fc46c1971f3bffc4a6eff129793f853ec808736
+
+DOCKER_TESTED_IMAGE_REPO_DIGEST := 64b8e341a0ad96309c46169f6425e84e00bfc21291044db1c88c723e523a0a90
 
 DOCKER_PULL_IDENTIFIER := docker.io/riot/riotbuild@sha256:$(DOCKER_TESTED_IMAGE_REPO_DIGEST)
 export DOCKER_IMAGE ?= $(DOCKER_PULL_IDENTIFIER)
@@ -26,8 +27,9 @@ DOCKER_MAKECMDGOALS_POSSIBLE := \
   tests-% \
   #
 
-# On native, we also can run the test in docker
+# On native, we also can run the flash and test in docker
 ifneq (, $(filter native%,$(BOARD)))
+  DOCKER_MAKECMDGOALS_POSSIBLE += flash
   DOCKER_MAKECMDGOALS_POSSIBLE += test
 endif
 
@@ -36,7 +38,8 @@ export DOCKER_MAKECMDGOALS := $(filter $(DOCKER_MAKECMDGOALS_POSSIBLE),$(MAKECMD
 
 # Docker creates the files .dockerinit and .dockerenv in the root directory of
 # the container, we check for the files to determine if we are inside a container.
-ifneq (,$(wildcard /.dockerinit /.dockerenv))
+# Podman uses /run/.containerenv instead.
+ifneq (,$(wildcard /.dockerinit /.dockerenv /run/.containerenv))
   export INSIDE_DOCKER := 1
 else
   export INSIDE_DOCKER := 0
@@ -53,7 +56,6 @@ export DOCKER_ENV_VARS += \
   AR \
   AS \
   ASFLAGS \
-  BINDIR \
   BINDIRBASE \
   BOARD \
   BOARDS \
@@ -68,6 +70,7 @@ export DOCKER_ENV_VARS += \
   CXX \
   CXXEXFLAGS \
   CXXUWFLAGS \
+  DEVELHELP \
   $(DOCKER_RIOT_CONFIG_VARIABLES) \
   ELFFILE \
   FLASHFILE \
@@ -84,6 +87,7 @@ export DOCKER_ENV_VARS += \
   PREFIX \
   PROGRAMMER \
   QUIET \
+  QUIETER \
   RIOT_CI_BUILD \
   RIOT_VERSION \
   RIOT_VERSION_CODE \
@@ -145,7 +149,7 @@ _docker_is_podman = $(shell $(DOCKER) --version | grep podman 2>/dev/null)
 # - allocate a pseudo-tty
 # - remove container on exit
 # - set username/UID to executor
-DOCKER_USER ?= $$(id -u)
+DOCKER_USER ?= $$(id -u):$$(id -g)
 DOCKER_USER_OPT = $(if $(_docker_is_podman),--userns keep-id,--user $(DOCKER_USER))
 DOCKER_RUN_FLAGS ?= --rm --tty $(DOCKER_USER_OPT)
 
@@ -155,10 +159,10 @@ DOCKER_RUN_FLAGS += --platform linux/amd64
 # allow setting make args from command line like '-j'
 DOCKER_MAKE_ARGS ?=
 
-# Resolve symlink of /etc/localtime to its real path
-# This is a workaround for docker on macOS, for more information see:
-# https://github.com/docker/for-mac/issues/2396
-ETC_LOCALTIME = $(realpath /etc/localtime)
+# Extract timezone name from /etc/localtime, for passing to the container. This
+# avoids mounting /etc/localtime which fails for some container runtimes under
+# macOS.
+HOST_TIMEZONE = $(shell readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')
 
 # Fetch the number of jobs from the MAKEFLAGS
 # With $MAKE_VERSION < 4.2, the amount of parallelism is not available in
@@ -290,15 +294,22 @@ DOCKER_APPDIR = $(DOCKER_RIOTPROJECT)/$(BUILDRELPATH)
 
 
 # Directory mapping in docker and directories environment variable configuration
-DOCKER_VOLUMES_AND_ENV += $(call docker_volume,$(ETC_LOCALTIME),/etc/localtime,ro)
 DOCKER_VOLUMES_AND_ENV += $(call docker_volume,$(RIOTBASE),$(DOCKER_RIOTBASE))
 # Selective components of Cargo to ensure crates are not re-downloaded (and
 # subsequently rebuilt) on every run. Not using all of ~/.cargo as ~/.cargo/bin
 # would be run by Cargo and that'd be very weird.
 DOCKER_VOLUMES_AND_ENV += $(call docker_volume,$(HOME)/.cargo/registry,$(DOCKER_BUILD_ROOT)/.cargo/registry)
 DOCKER_VOLUMES_AND_ENV += $(call docker_volume,$(HOME)/.cargo/git,$(DOCKER_BUILD_ROOT)/.cargo/git)
+DOCKER_VOLUMES_AND_ENV += -e 'TZ=$(HOST_TIMEZONE)'
 DOCKER_VOLUMES_AND_ENV += -e 'RIOTBASE=$(DOCKER_RIOTBASE)'
 DOCKER_VOLUMES_AND_ENV += -e 'CCACHE_BASEDIR=$(DOCKER_RIOTBASE)'
+
+# Only export the BINDIR path if it is not the standard path.
+# We have to check it this way since BINDIR is often overridden and we can not
+# reliably check it's origin.
+ifneq ($(BINDIR),$(BINDIRBASE)/$(BOARD))
+  DOCKER_VOLUMES_AND_ENV += $(call docker_volume_and_env,BINDIR,,bindir)
+endif
 
 DOCKER_VOLUMES_AND_ENV += $(call docker_volume_and_env,BUILD_DIR,,build)
 
@@ -312,6 +323,7 @@ DOCKER_VOLUMES_AND_ENV += $(call docker_volume_and_env,RIOTBOARD,,riotboard)
 DOCKER_VOLUMES_AND_ENV += $(call docker_volume_and_env,RIOTMAKE,,riotmake)
 
 # Add GIT_CACHE_DIR if the directory exists
+GIT_CACHE_DIR ?= $(HOME)/.gitcache
 DOCKER_VOLUMES_AND_ENV += $(if $(wildcard $(GIT_CACHE_DIR)),$(call docker_volume,$(GIT_CACHE_DIR),$(DOCKER_BUILD_ROOT)/gitcache))
 DOCKER_VOLUMES_AND_ENV += $(if $(wildcard $(GIT_CACHE_DIR)),-e 'GIT_CACHE_DIR=$(DOCKER_BUILD_ROOT)/gitcache')
 

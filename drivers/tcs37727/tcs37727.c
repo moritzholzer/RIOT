@@ -1,11 +1,7 @@
 /*
- * Copyright (C) 2015 PHYTEC Messtechnik GmbH
- *               2017 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
- *
+ * SPDX-FileCopyrightText: 2015 PHYTEC Messtechnik GmbH
+ * SPDX-FileCopyrightText: 2017 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -50,10 +46,14 @@ int tcs37727_init(tcs37727_t *dev, const tcs37727_params_t *params)
     i2c_acquire(BUS);
 
     /* check if we can communicate with the device */
-    i2c_read_reg(BUS, ADR, TCS37727_ID, &tmp, 0);
-    if (tmp != TCS37727_ID_VALUE) {
+    if (i2c_read_reg(BUS, ADR, TCS37727_ID, &tmp, 0) < 0) {
         i2c_release(BUS);
         LOG_ERROR("[tcs37727] init: error while reading ID register\n");
+        return TCS37727_NOBUS;
+    }
+    if (tmp != TCS37727_ID_VALUE) {
+        i2c_release(BUS);
+        LOG_ERROR("[tcs37727] init: invalid ID value (0x%02x)\n", (int)tmp);
         return TCS37727_NODEV;
     }
 
