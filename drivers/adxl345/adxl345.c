@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2017-2018 Mesotic SAS
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2017-2018 Mesotic SAS
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -52,7 +49,11 @@ int adxl345_init(adxl345_t *dev, const adxl345_params_t* params)
     i2c_acquire(ADXL345_BUS);
 
     /* test if the target device responds */
-    i2c_read_reg(ADXL345_BUS, ADXL345_ADDR, ADXL345_CHIP_ID_REG, &reg, 0);
+    if (i2c_read_reg(ADXL345_BUS, ADXL345_ADDR, ADXL345_CHIP_ID_REG, &reg, 0) < 0) {
+        i2c_release(ADXL345_BUS);
+        DEBUG("[adxl345] init - error: unable to read id\n");
+        return ADXL345_NOI2C;
+    }
     if (reg != ADXL345_CHIP_ID) {
         i2c_release(ADXL345_BUS);
         DEBUG("[adxl345] init - error: invalid id value [0x%02x]\n", (int)reg);

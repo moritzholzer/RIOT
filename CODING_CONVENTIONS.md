@@ -531,10 +531,13 @@ Wrong:
 * Every header file includes a general description about the provided
   functionality.
 * Every function must be documented - including parameters and return value.
+* Example code and shell commands should be put in blocks separated by
+  backticks instead of using other block types to ensure compatibility with
+  Doxygen *and* Starlight.
 
-An exemplary doxygen documentation in a header file can look like this.
+An exemplary Doxygen documentation in a header file can look like this:
 
-```c
+````c
 /*
  * SPDX-FileCopyrightText: 2014 Peter Schmerzl <peter@schmerzl-os.org>
  * SPDX-License-Identifier: LGPL-2.1-only
@@ -549,8 +552,18 @@ An exemplary doxygen documentation in a header file can look like this.
  *
  * More detailed information about the file and the functionality implemented.
  *
- * @author      Peter Schmerzl <peter@schmerzl-os.org>
+ * Some example code in a C code block:
+ * ```c
+ * set_my_function(foo, bar, 0);
+ * int ret = check_my_function();
+ * ```
  *
+ * An exemplary shell command that explains how to change compile time options.
+ * ```shell
+ * CFLAGS=-D"CONFIG_FOO='BAR'" BOARD=fooboard make ...
+ * ```
+ *
+ * @author      Peter Schmerzl <peter@schmerzl-os.org>
  */
 
 /**
@@ -575,7 +588,9 @@ An exemplary doxygen documentation in a header file can look like this.
  * @retval  -ENOMEM on small microcontrollers with little RAM
  */
 int get_foolength(void);
-```
+
+/** @} */
+````
 
 ### SPDX
 
@@ -598,7 +613,6 @@ Old Style - License Information:
  * General Public License v2.1. See the file LICENSE in the top level
  * directory for more details.
  */
-
 ```
 
 New Style - SPDX Format:
@@ -654,8 +668,10 @@ not a string literal`.
 
 ## Git
 
-* Make one commit per change.
-* The first line of the commit message describes the main feature of the commit.
+* Try to group your changes into commits that focus on a certain area,
+  for example: "cpu/stm32: fix ADC resolution check"
+* For more information about using Git and our Commit Conventions see
+  https://github.com/RIOT-OS/RIOT/blob/master/CONTRIBUTING.md#commit-conventions
 
 ## Continuous Integration
 * If the CI tests fail due to errors these errors need to be addressed.
@@ -665,37 +681,37 @@ not a string literal`.
   comment, including a rationale why it is a false positive and why the code
   can't be fixed otherwise, in the following format:
 ```c
-    /* cppcheck-suppress <category of error/warning>
-     * (reason: cppcheck is being really silly. this is certainly not a
-     * null-pointer dereference */
+/* cppcheck-suppress <category of error/warning>
+ * (reason: cppcheck is being really silly. this is certainly not a
+ * null-pointer dereference */
 ```
 
 ## Python coding convention
 
-* Code shall be compliant with Python 3.10 at minimum, because this is the
-  default Python 3 version in Ubuntu 22.04 (used as the reference system for
+* Code shall be compliant with Python 3.14 at minimum, because this is the
+  default Python 3 version in Ubuntu 26.04 (used as the reference system for
   CI).
 * Code shall report no error when running the
   [Flake8](http://flake8.pycqa.org/en/latest/) tool, e.g:
     * for style checks described in
-      [PEP 8](https://www.python.org/dev/peps/pep-0008/),
+      [PEP 8](https://peps.python.org/pep-0008),
     * for lint checks provided by
       [Pyflakes](https://pypi.python.org/pypi/pyflakes),
     * for complexity checks provided by the
       [McCabe project](https://pypi.python.org/pypi/mccabe)
 * A line length of maximum of 120 is allowed instead of 79 as per PEP 8. This
   increases tests readability as they can expects long line of output.
+* [PEP 257](https://peps.python.org/pep-0257) docstring conventions shall be
+  followed. Of the two styles PEP 257 permits for multi-line docstrings, we use
+  the one where the summary line starts on the line after the opening quotes.
 * Only runnable scripts shall start with `#!/usr/bin/env python3`
 * Runnable scripts shall use the following scheme:
 
 ```python
 #!/usr/bin/env python3
 
-# Copyright (C) <your copyright>
-#
-# This file is subject to the terms and conditions of the GNU Lesser
-# General Public License v2.1. See the file LICENSE in the top level
-# directory for more details.
+# SPDX-FileCopyrightText: 2026 <your name/company>
+# SPDX-License-Identifier: LGPL-2.1-only
 
 # put the module imports first
 # see https://www.python.org/dev/peps/pep-0008/#imports

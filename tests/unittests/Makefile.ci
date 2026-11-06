@@ -57,6 +57,7 @@ BOARD_INSUFFICIENT_MEMORY := \
     nucleo-f303k8 \
     nucleo-f334r8 \
     nucleo-f410rb \
+    nucleo-g031k8 \
     nucleo-g070rb \
     nucleo-g071rb \
     nucleo-g431rb \
@@ -91,6 +92,7 @@ BOARD_INSUFFICIENT_MEMORY := \
     samr30-xpro \
     samr34-xpro \
     seeeduino_arch-pro \
+    slstk3301a \
     slstk3400a \
     slstk3401a \
     sltb001a \

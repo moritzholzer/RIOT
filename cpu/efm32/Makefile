@@ -25,6 +25,9 @@ endif
 ifneq (,$(filter cpu_efm32pg12b,$(USEMODULE)))
   DIRS += families/efm32pg12b
 endif
+ifneq (,$(filter cpu_efm32tg11b,$(USEMODULE)))
+  DIRS += families/efm32tg11b
+endif
 ifneq (,$(filter cpu_efm32zg,$(USEMODULE)))
   DIRS += families/efm32zg
 endif
@@ -47,6 +50,9 @@ endif
 # add EFM32 specific drivers, if enabled
 ifneq (,$(filter efm32_coretemp,$(USEMODULE)))
   DIRS += drivers/coretemp
+endif
+ifneq (,$(filter efm32_eth,$(USEMODULE)))
+  DIRS += drivers/eth
 endif
 
 include $(RIOTBASE)/Makefile.base

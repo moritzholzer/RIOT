@@ -1,10 +1,7 @@
 /*
- * Copyright (C) 2015 Kaspar Schleiser <kaspar@schleiser.de>
- *               2015 Hauke Petersen <hauke.petersen@fu-berlin.de>
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2015 Kaspar Schleiser <kaspar@schleiser.de>
+ * SPDX-FileCopyrightText: 2015 Hauke Petersen <hauke.petersen@fu-berlin.de>
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 #pragma once
@@ -34,49 +31,49 @@ extern "C" {
 /**
  * @brief   SPI bus the AT86RF2xx is connected to
  */
-#define AT86RF2XX_PARAM_SPI         (SPI_DEV(0))
+#  define AT86RF2XX_PARAM_SPI         (SPI_DEV(0))
 #endif
 
 #ifndef AT86RF2XX_PARAM_SPI_CLK
 /**
  * @brief   Clock to drive the SPI bus when speaking with the AT86RF2xx
  */
-#define AT86RF2XX_PARAM_SPI_CLK     (SPI_CLK_5MHZ)
+#  define AT86RF2XX_PARAM_SPI_CLK     (SPI_CLK_5MHZ)
 #endif
 
 #ifndef AT86RF2XX_PARAM_CS
 /**
  * @brief   GPIO pin the CS pin of the AT86RF2xx is connected to
  */
-#define AT86RF2XX_PARAM_CS          (GPIO_PIN(0, 0))
+#  define AT86RF2XX_PARAM_CS          (GPIO_PIN(0, 0))
 #endif
 
 #ifndef AT86RF2XX_PARAM_INT
 /**
  * @brief   GPIO pin the INT pin of the AT86RF2xx is connected to
  */
-#define AT86RF2XX_PARAM_INT         (GPIO_PIN(0, 1))
+#  define AT86RF2XX_PARAM_INT         (GPIO_PIN(0, 1))
 #endif
 
 #ifndef AT86RF2XX_PARAM_SLEEP
 /**
  * @brief   GPIO pin the SLEEP pin of the AT86RF2xx is connected to
  */
-#define AT86RF2XX_PARAM_SLEEP       (GPIO_PIN(0, 2))
+#  define AT86RF2XX_PARAM_SLEEP       (GPIO_PIN(0, 2))
 #endif
 
 #ifndef AT86RF2XX_PARAM_RESET
 /**
  * @brief   GPIO pin the RESET pin of the AT86RF2xx is connected to
  */
-#define AT86RF2XX_PARAM_RESET       (GPIO_PIN(0, 3))
+#  define AT86RF2XX_PARAM_RESET       (GPIO_PIN(0, 3))
 #endif
 
 #ifndef AT86RF2XX_PARAMS
 /**
  * @brief   Parameters to initialize the AT86RF2xx driver with
  */
-#define AT86RF2XX_PARAMS            { .spi = AT86RF2XX_PARAM_SPI,         \
+#  define AT86RF2XX_PARAMS            { .spi = AT86RF2XX_PARAM_SPI,         \
                                       .spi_clk = AT86RF2XX_PARAM_SPI_CLK, \
                                       .cs_pin = AT86RF2XX_PARAM_CS,       \
                                       .int_pin = AT86RF2XX_PARAM_INT,     \

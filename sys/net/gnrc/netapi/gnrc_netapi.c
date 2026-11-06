@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2015 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2015 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -21,6 +18,7 @@
 #include <assert.h>
 #include <errno.h>
 
+#include "log.h"
 #include "mbox.h"
 #include "msg.h"
 #include "net/gnrc/netreg.h"
@@ -55,14 +53,15 @@ int _gnrc_netapi_get_set(kernel_pid_t pid, netopt_t opt, uint16_t context,
 
 int _gnrc_netapi_send_recv(kernel_pid_t pid, gnrc_pktsnip_t *pkt, uint16_t type)
 {
-    msg_t msg;
     /* set the outgoing message's fields */
-    msg.type = type;
-    msg.content.ptr = (void *)pkt;
+    msg_t msg = {
+        .type = type,
+        .content.ptr = pkt,
+    };
     /* send message */
     int ret = msg_try_send(&msg, pid);
     if (ret < 1) {
-        DEBUG("gnrc_netapi: dropped message to %" PRIkernel_pid " (%s)\n", pid,
+        LOG_WARNING("gnrc_netapi: dropped message to %" PRIkernel_pid " (%s)\n", pid,
               (ret == 0) ? "receiver queue is full" : "invalid receiver");
     }
     return ret;
@@ -71,14 +70,15 @@ int _gnrc_netapi_send_recv(kernel_pid_t pid, gnrc_pktsnip_t *pkt, uint16_t type)
 #ifdef MODULE_GNRC_NETAPI_MBOX
 static inline int _snd_rcv_mbox(mbox_t *mbox, uint16_t type, gnrc_pktsnip_t *pkt)
 {
-    msg_t msg;
     /* set the outgoing message's fields */
-    msg.type = type;
-    msg.content.ptr = (void *)pkt;
+    msg_t msg = {
+        .type = type,
+        .content.ptr = pkt,
+    };
     /* send message */
     int ret = mbox_try_put(mbox, &msg);
     if (ret < 1) {
-        DEBUG("gnrc_netapi: dropped message to %p (was full)\n", (void*)mbox);
+        LOG_WARNING("gnrc_netapi: dropped message to %p (was full)\n", (void*)mbox);
     }
     return ret;
 }
@@ -130,7 +130,7 @@ int gnrc_netapi_dispatch(gnrc_nettype_t type, uint32_t demux_ctx,
     if (numof != 0) {
         gnrc_netreg_entry_t *sendto = gnrc_netreg_lookup(type, demux_ctx);
 
-        /* the packet is replicated over all interfaces that is's being sent on */
+        /* the packet is replicated over all interfaces that it's being sent on */
         gnrc_pktbuf_hold(pkt, numof - 1);
 
         while (sendto) {

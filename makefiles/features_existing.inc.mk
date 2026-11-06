@@ -9,7 +9,6 @@ FEATURES_EXISTING := \
     arch_arm \
     arch_arm7 \
     arch_avr8 \
-    arch_efm32 \
     arch_esp \
     arch_esp32 \
     arch_esp32_xtensa \
@@ -81,12 +80,14 @@ FEATURES_EXISTING := \
     cpu_msp430_f2xx_g2xx \
     cpu_msp430_x1xx \
     cpu_native \
+    cpu_noelv \
     cpu_nrf51 \
     cpu_nrf52 \
     cpu_nrf53 \
     cpu_nrf9160 \
     cpu_qn908x \
-    cpu_rp2350 \
+    cpu_rp2350_arm \
+    cpu_rp2350_riscv \
     cpu_rpx0xx \
     cpu_sam3 \
     cpu_sam4s \
@@ -104,16 +105,19 @@ FEATURES_EXISTING := \
     cpu_stm32f7 \
     cpu_stm32g0 \
     cpu_stm32g4 \
+    cpu_stm32h7 \
     cpu_stm32l0 \
     cpu_stm32l1 \
     cpu_stm32l4 \
     cpu_stm32l5 \
     cpu_stm32mp1 \
+    cpu_stm32u3 \
     cpu_stm32u5 \
     cpu_stm32wb \
     cpu_stm32wl \
     dbgpin \
     efm32_coretemp \
+    efm32_eth \
     emulator_renode \
     esp_ble \
     esp_hw_counter \
@@ -133,6 +137,7 @@ FEATURES_EXISTING := \
     gecko_sdk_librail_nonfpu \
     highlevel_stdio \
     libstdcpp \
+    lpc1768_eth \
     motor_driver \
     netif \
     netif_ethernet \
@@ -150,6 +155,7 @@ FEATURES_EXISTING := \
     periph_cpuid \
     periph_cryptocell_310 \
     periph_dac \
+    periph_dac_play \
     periph_dma \
     periph_ecc_ed25519 \
     periph_ecc_p192r1 \
@@ -207,6 +213,7 @@ FEATURES_EXISTING := \
     periph_mcg \
     periph_mcg_lite \
     periph_nvm \
+    periph_pdm \
     periph_pio \
     periph_plic \
     periph_pm \
@@ -257,6 +264,7 @@ FEATURES_EXISTING := \
     periph_wdt \
     periph_wdt_cb \
     periph_wdt_warning_period \
+    periph_xh3irq \
     picolibc \
     pio_i2c \
     puf_sram \
@@ -268,6 +276,7 @@ FEATURES_EXISTING := \
     sdcard_spi \
     ssp \
     tinyusb_device \
+    trustzone_m \
     vdd_lc_filter_reg0 \
     vdd_lc_filter_reg1 \
     xiao_shield \

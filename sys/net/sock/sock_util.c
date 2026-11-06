@@ -1,10 +1,7 @@
 /*
- * Copyright (C) 2017 Kaspar Schleiser <kaspar@schleiser.de>
- *               2018 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2017 Kaspar Schleiser <kaspar@schleiser.de>
+ * SPDX-FileCopyrightText: 2018 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -287,7 +284,7 @@ int sock_tl_name2ep(struct _sock_tl_ep *ep_out, const char *str)
     int family;
     char hostbuf[CONFIG_SOCK_HOSTPORT_MAXLEN];
     const char *host;
-    char *hostend = strchr(str, ':');
+    const char *hostend = strchr(str, ':');
     if (hostend == NULL) {
         host = str;
         ep_out->port = 0;

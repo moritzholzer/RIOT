@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2022 ML!PA Consulting GmbH
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2022 ML!PA Consulting GmbH
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 #pragma once
@@ -54,7 +51,7 @@ static inline void *event_periodic_callback_get_arg(event_periodic_callback_t *e
 /**
  * @brief   Initialize a periodic callback event
  *
- * @note: On init the periodic event is configured to run forever.
+ * @note  On init the periodic event is configured to run forever.
  *
  * @param[in]   event           event_periodic_callback object to initialize
  * @param[in]   clock           the clock to configure this timer on
@@ -83,10 +80,10 @@ static inline void event_periodic_callback_init(event_periodic_callback_t *event
  * This will make the event as configured in @p event be triggered
  * at every interval ticks (based on event->periodic.clock).
  *
- * @note: the used event_periodic struct must stay valid until after the timeout
- *        event has been processed!
+ * @note  @p event must stay valid until after all periodic timeout
+ *        events have been processed!
  *
- * @note: this function does not touch the current count value.
+ * @note  this function does not touch the current count value.
  *
  * @param[in]   event           event_periodic_callback context object to use
  * @param[in]   interval        period length for the event
@@ -99,10 +96,39 @@ static inline void event_periodic_callback_start(event_periodic_callback_t *even
 }
 
 /**
+ * @brief   Starts a periodic callback event without delay for the first occurrence
+ *
+ * If the event is already started, it's interval will be updated and it
+ * will be scheduled immediately.
+ *
+ * This will make the event as configured in @p event be triggered
+ * at every interval ticks (based on event->periodic.clock).
+ *
+ * @note  @p event must stay valid until after all periodic timeout
+ *        events have been processed!
+ *
+ * @note  this function does not touch the current count value.
+ *
+ * @note  the periodic event will start without initial delay.
+ *
+ * @param[in]   event           event_periodic_callback context object to use
+ * @param[in]   interval        period length for the event
+ */
+static inline void event_periodic_callback_start_now(event_periodic_callback_t *event,
+                                                     uint32_t interval)
+{
+    assert(event->event.callback);
+    event_periodic_start_now(&event->periodic, interval);
+}
+
+/**
  * @brief   Initialize and start a periodic callback event
  *
  * This is a convenience function that combines @ref event_periodic_callback_init
  * and @ref event_periodic_callback_start
+ *
+ * @note  The periodic callback event is configured to run forever, and the first
+ *        occurrence happens after the delay given by @p timeout .
  *
  * @param[out]  event           event_periodic_callback object to initialize
  * @param[in]   clock           the clock to configure this timer on

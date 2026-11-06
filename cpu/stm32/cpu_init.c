@@ -24,7 +24,6 @@
  * @author      Vincent Dupont <vincent@otakeys.com>
  * @author      Oleg Artamonov <oleg@unwds.com>
  * @author      Francisco Molina <francisco.molina@inria.cl>
- *
  * @}
  */
 
@@ -44,6 +43,8 @@
 #define BIT_APB_PWREN       RCC_APB1ENR1_PWREN
 #elif defined(CPU_FAM_STM32G0) || defined(CPU_FAM_STM32C0)
 #define BIT_APB_PWREN       RCC_APBENR1_PWREN
+#elif defined (CPU_FAM_STM32H7)
+#define BIT_APB_PWREN       RCC_APB1HENR_CRSEN
 #elif !defined(CPU_FAM_STM32MP1)
 #define BIT_APB_PWREN       RCC_APB1ENR_PWREN
 #endif
@@ -357,6 +358,8 @@ void cpu_init(void)
     /* enable PWR module */
 #if defined(CPU_FAM_STM32U5)
     periph_clk_en(AHB3, RCC_AHB3ENR_PWREN);
+#elif defined(CPU_FAM_STM32U3)
+    periph_clk_en(AHB12, RCC_AHB1ENR2_PWREN);
 #elif !defined(CPU_FAM_STM32WB) && !defined(CPU_FAM_STM32MP1) &&  \
     !defined(CPU_FAM_STM32WL)
     periph_clk_en(APB1, BIT_APB_PWREN);
@@ -400,6 +403,8 @@ void backup_ram_init(void)
     periph_clk_en(APB1, RCC_APB1ENR1_PWREN);
 #elif defined(RCC_AHB3ENR_PWREN)
     periph_clk_en(AHB3, RCC_AHB3ENR_PWREN);
+#elif defined(RCC_AHB1ENR2_PWREN)
+    periph_clk_en(AHB12, RCC_AHB1ENR2_PWREN);
 #endif
     stmclk_dbp_unlock();
 #if defined(RCC_AHB1ENR_BKPSRAMEN)

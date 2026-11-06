@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2019-2021 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2019-2021 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 #pragma once
@@ -166,7 +163,7 @@ int nimble_rpble_eventcb(nimble_netif_eventcb_t cb);
  *
  * @note    This function is meant to be called only by the RPL implementation
  *
- * @param[in] ctx       current DODAG state
+ * @param[in] ctx       current DODAG state or NULL if the DODAG was cleared.
 
  * @return  0 on success
  * @return  -EALREADY if the given context did not change

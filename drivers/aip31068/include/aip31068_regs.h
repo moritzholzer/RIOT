@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2020 Freie Universität Berlin
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2020 Freie Universität Berlin
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 #pragma once
@@ -28,7 +25,7 @@ extern "C"
 /**
  * @brief Clears entire display and sets cursor to position (0, 0).
  *
- * @note: Also changes AIP31068_BIT_ENTRY_MODE_INCREMENT to 1
+ * @note  Also changes AIP31068_BIT_ENTRY_MODE_INCREMENT to 1
  */
 #define AIP31068_CMD_CLEAR_DISPLAY          0x01
 

@@ -107,6 +107,25 @@ extern "C" {
 #endif
 
 /**
+ * @def       WARN_UNUSED_RESULT
+ * @brief     Attribute to add to a function whose return value should not
+ *            silently be discarded.
+ *
+ * @note      The textbook usecase is a function that may return an error where
+ *            the caller is expected to handle that error.
+ *
+ * This attribute appears in the [GCC 3.4.3 doc][gcc-warn-unused-result]
+ * and in the [clang 6.0.0 doc][clang-warn-unused-result], so it is supported
+ * by all toolchains supported by RIOT. By using the macro instead of the
+ * attribute itself, we can still port RIOT to other toolchains that lack this
+ * attribute rather easily.
+ *
+ * [gcc-warn-unused-result]: https://gcc.gnu.org/onlinedocs/gcc-3.4.3/gcc/Function-Attributes.html
+ * [clang-warn-unused-result]: https://releases.llvm.org/6.0.0/tools/clang/docs/AttributeReference.html#nodiscard-warn-unused-result-clang-warn-unused-result-gnu-warn-unused-result
+ */
+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+
+/**
  * @brief   Disable -Wpedantic for the argument, but restore diagnostic
  *          settings afterwards
  * @param   ...     The expression that -Wpendantic should not apply to
@@ -158,6 +177,34 @@ extern "C" {
 #endif
 
 /**
+ * @brief   Emit an attribute (if supported by the compiler) that declares how
+ *          a function will access its parameters
+ *
+ * @note    The annotation can be repeated for every applicable pair of pointer
+ *          and size.
+ * @param   mode        Any of: `read_only`, `read_write`, `write_only`, or
+ *                      `none`
+ * @param   ptr_idx     **Position** of the argument that points to the data
+ *                      to access (e.g. 1 = first argument)
+ * @param   size_idx    **Position** of the argument that gives the size in
+ *                      terms of array elements (or bytes in case of `void *`)
+ *
+ * @note    This is supported in [GCC since 10.1.0](https://gcc.gnu.org/onlinedocs/gcc-10.1.0/gcc/Common-Function-Attributes.html).
+ *          If the compiler does not support this attribute, it will be a no-op.
+ */
+#if DOXYGEN
+#  define ACCESS(mode, ptr_idx, size_idx) implementation_defined
+#elif defined(__has_attribute)
+#  if __has_attribute(access)
+#    define ACCESS(mode, ptr_idx, size_idx) __attribute__((access(mode, ptr_idx, size_idx)))
+#  else
+#    define ACCESS(mode, ptr_idx, size_idx)
+#  endif
+#else
+#  define ACCESS(mode, ptr_idx, size_idx)
+#endif
+
+/**
  * @brief   Hint to the compiler that the condition @p x is likely taken
  *
  * @param[in] x     Condition that is likely taken
@@ -181,15 +228,13 @@ extern "C" {
  *          This allows the compiler to optimize the code accordingly even when
  *          `NDEBUG` is set / with `DEVELHELP=0`.
  *
- *          @p cond being false will result in undefined behavior.
+ * @warning When `NDEBUG` is set, @p cond being false will result in undefined
+ *          behavior. (With `NDEBUG` not being set, a failed assertion panic
+ *          will occur on @p cond being false instead.)
  *
  * @param[in] cond  Condition that is guaranteed to be true
  */
-#ifdef NDEBUG
-#  define assume(cond) ((cond) ? (void)0 : UNREACHABLE())
-#else
-#  define assume(cond) assert(cond)
-#endif
+#define assume(cond) ((cond) ? (void)0 : (assert(0), UNREACHABLE()))
 
 /**
  * @brief   Wrapper function to silence "comparison is always false due to limited

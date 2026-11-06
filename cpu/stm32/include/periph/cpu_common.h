@@ -59,8 +59,9 @@ extern "C" {
       defined(CPU_FAM_STM32F7) || defined(CPU_FAM_STM32L4) || \
       defined(CPU_FAM_STM32WB) || defined(CPU_FAM_STM32G4) || \
       defined(CPU_FAM_STM32G0) || defined(CPU_FAM_STM32L5) || \
-      defined(CPU_FAM_STM32U5) || defined(CPU_FAM_STM32MP1) || \
-      defined(CPU_FAM_STM32WL) || defined(CPU_FAM_STM32C0)
+      defined(CPU_FAM_STM32U3) || defined(CPU_FAM_STM32MP1) || \
+      defined(CPU_FAM_STM32WL) || defined(CPU_FAM_STM32C0) || \
+      defined(CPU_FAM_STM32H7) || defined(CPU_FAM_STM32U5)
 #define CLOCK_LSI           (32000U)
 #else
 #error "error: LSI clock speed not defined for your target CPU"
@@ -70,6 +71,7 @@ extern "C" {
 #if     defined(CPU_FAM_STM32G4) || \
         defined(CPU_FAM_STM32L4) || \
         defined(CPU_FAM_STM32L5) || \
+        defined(CPU_FAM_STM32U3) || \
         defined(CPU_FAM_STM32U5) || \
         defined(CPU_FAM_STM32WB) || \
         defined(CPU_FAM_STM32WL)
@@ -79,6 +81,9 @@ extern "C" {
         defined(CPU_FAM_STM32G0)
             #define APB1_PERIPH_EN              RCC->APBENR1
             #define APB12_PERIPH_EN             RCC->APBENR2
+#elif   defined(CPU_FAM_STM32H7)
+            #define APB1_PERIPH_EN              RCC->APB1LENR
+            #define APB12_PERIPH_EN             RCC->APB1HENR
 #elif   defined(CPU_FAM_STM32MP1)
             #define APB1_PERIPH_EN              RCC->MC_APB1ENSETR
             #define APB1_PERIPH_DIS             RCC->MC_APB1ENCLRR
@@ -94,7 +99,9 @@ extern "C" {
             #define APB2_PERIPH_DIS             RCC->MC_APB2ENCLRR
 #elif   defined(APB2PERIPH_BASE) || \
         defined(CPU_FAM_STM32F0) || \
-        defined(CPU_FAM_STM32L0)
+        defined(CPU_FAM_STM32L0) || \
+        defined(CPU_FAM_STM32H7) || \
+        defined(CPU_FAM_STM32U3)
             #define APB2_PERIPH_EN              RCC->APB2ENR
 #endif
 
@@ -103,19 +110,31 @@ extern "C" {
             /* CPU has APB3, but no periph enable registers for the bus. */
             #undef APB3_PERIPH_EN               /* not defined */
 #elif   defined(APB3PERIPH_BASE) || \
-        defined(APB3PERIPH_BASE_S)
+        defined(APB3PERIPH_BASE_NS) || \
+        defined(APB3PERIPH_BASE_S) || \
+        defined(CPU_FAM_STM32H7) || \
+        defined(CPU_FAM_STM32U3)
             #define APB3_PERIPH_EN              RCC->APB3ENR
+#endif
+
+/* if CPU has APB4 bus */
+#if     defined(CPU_FAM_STM32H7)
+            #define APB4_PERIPH_EN      RCC->APB4ENR
 #endif
 
 /* if CPU has AHB/AHB1 bus */
 #if     defined(AHBPERIPH_BASE) || \
         defined(CPU_FAM_STM32F3)
             #define AHB_PERIPH_EN               RCC->AHBENR
+#elif   defined(CPU_FAM_STM32U3)
+            #define AHB1_PERIPH_EN              RCC->AHB1ENR1
+            #define AHB12_PERIPH_EN             RCC->AHB1ENR2
 #elif   defined(CPU_FAM_STM32MP1)
             /* CPU has AHB1, but no periph enable registers for the bus. */
             #undef AHB1_PERIPH_EN               /* not defined */
             #undef AHB1_PERIPH_DIS              /* not defined */
-#elif   defined(AHB1PERIPH_BASE)
+#elif   defined(AHB1PERIPH_BASE) || \
+        defined(CPU_FAM_STM32H7)
             #define AHB1_PERIPH_EN              RCC->AHB1ENR
 #endif
 
@@ -124,7 +143,8 @@ extern "C" {
         defined(CPU_FAM_STM32F3)
             /* CPU has AHB2, but no periph enable registers for the bus. */
             #undef AHB2_PERIPH_EN               /* not defined */
-#elif   defined(CPU_FAM_STM32U5)
+#elif   defined(CPU_FAM_STM32U3) || \
+        defined(CPU_FAM_STM32U5)
             #define AHB2_PERIPH_EN              RCC->AHB2ENR1
             #define AHB22_PERIPH_EN             RCC->AHB2ENR2
 #elif   defined(CPU_FAM_STM32F4) && defined(RCC_AHB2_SUPPORT)
@@ -132,7 +152,8 @@ extern "C" {
 #elif   defined(CPU_FAM_STM32MP1)
             #define AHB2_PERIPH_EN              RCC->MC_AHB2ENSETR
             #define AHB2_PERIPH_DIS             RCC->MC_AHB2ENCLRR
-#elif   defined(AHB2PERIPH_BASE)
+#elif   defined(AHB2PERIPH_BASE) || \
+        defined(CPU_FAM_STM32H7)
             #define AHB2_PERIPH_EN              RCC->AHB2ENR
 #endif
 
@@ -150,7 +171,8 @@ extern "C" {
         defined(CPU_FAM_STM32F2) || \
         defined(CPU_FAM_STM32F7) || \
         defined(CPU_FAM_STM32G4) || \
-        defined(CPU_FAM_STM32L4)
+        defined(CPU_FAM_STM32L4) || \
+        defined(CPU_FAM_STM32H7)
             #define AHB3_PERIPH_EN              RCC->AHB3ENR
 #endif
 
@@ -158,6 +180,8 @@ extern "C" {
 #if     defined(CPU_FAM_STM32MP1)
             #define AHB4_PERIPH_EN              RCC->MC_AHB4ENSETR
             #define AHB4_PERIPH_DIS             RCC->MC_AHB4ENCLRR
+#elif   defined(CPU_FAM_STM32H7)
+            #define AHB4_PERIPH_EN              RCC->AHB4ENR
 #elif   defined(AHB4PERIPH_BASE)
             /* AHB3ENR is not a typo here. It controls both AHB3 and AHB4. */
             #define AHB4_PERIPH_EN              RCC->AHB3ENR
@@ -178,7 +202,7 @@ typedef enum {
     APB1,           /**< APB1 bus */
 #endif
 #if defined(APB12_PERIPH_EN)
-    APB12,          /**< AHB1 bus, second register */
+    APB12,          /**< APB1 bus, second register */
 #endif
 #if defined(APB2_PERIPH_EN)
     APB2,           /**< APB2 bus */
@@ -186,11 +210,17 @@ typedef enum {
 #if defined(APB3_PERIPH_EN)
     APB3,           /**< APB3 bus */
 #endif
+#if defined(APB4_PERIPH_EN)
+    APB4,           /**< APB4 bus */
+#endif
 #if defined(AHB_PERIPH_EN)
     AHB,            /**< AHB bus */
 #endif
 #if defined(AHB1_PERIPH_EN)
     AHB1,           /**< AHB1 bus */
+#endif
+#if defined(AHB12_PERIPH_EN)
+    AHB12,           /**< AHB12 bus */
 #endif
 #if defined(AHB2_PERIPH_EN)
     AHB2,           /**< AHB2 bus */

@@ -1,3 +1,3 @@
-DIRS = periph
+DIRS += periph
 
 include $(RIOTBASE)/Makefile.base

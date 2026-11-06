@@ -19,6 +19,7 @@
 #include "kernel_defines.h"
 #include "mutex.h"
 
+#include "config.h"
 #include "cpu.h"
 #include "cpu_conf.h"
 
@@ -113,14 +114,16 @@ typedef struct {
  */
 /* RTT_MAX_VALUE some are 24bit, some are 32bit */
 #if defined(_RTC_CNT_MASK)
-#define RTT_MAX_VALUE       _RTC_CNT_MASK        /* mask has all bits set ==> MAX*/
+#  define RTT_MAX_VALUE       _RTC_CNT_MASK     /* mask has all bits set ==> MAX*/
 #elif defined(_RTCC_CNT_MASK)
-#define RTT_MAX_VALUE       _RTCC_CNT_MASK       /* mask has all bits set ==> MAX*/
+#  define RTT_MAX_VALUE       _RTCC_CNT_MASK    /* mask has all bits set ==> MAX*/
 #endif
-#define RTT_MAX_FREQUENCY   (32768U)             /* in Hz */
-#define RTT_MIN_FREQUENCY   (1U)                 /* in Hz */
-#define RTT_CLOCK_FREQUENCY (32768U)             /* in Hz, LFCLK*/
-
+#define RTT_MAX_FREQUENCY   (32768U)            /* in Hz */
+#define RTT_MIN_FREQUENCY   (1U)                /* in Hz */
+#define RTT_CLOCK_FREQUENCY (32768U)            /* in Hz, LFCLK*/
+#if defined(_SILICON_LABS_32B_SERIES_0) || defined(_SILICON_LABS_32B_SERIES_1)
+#  define RTT_MIN_OFFSET      (1U)              /* min offset for all Series 0 and Series 1 */
+#endif
 /** @} */
 
 /**
@@ -425,15 +428,16 @@ typedef enum {
  * @brief   I2C device configuration.
  */
 typedef struct {
-    I2C_TypeDef *dev;       /**< USART device used */
-    gpio_t sda_pin;         /**< pin used for SDA */
-    gpio_t scl_pin;         /**< pin used for SCL */
+    I2C_TypeDef *dev;           /**< I2C device used */
+    gpio_t sda_pin;             /**< pin used for SDA */
+    gpio_t scl_pin;             /**< pin used for SCL */
 #if defined(_SILICON_LABS_32B_SERIES_0) || defined(_SILICON_LABS_32B_SERIES_1)
-    uint32_t loc;           /**< location of I2C pins */
+    uint32_t loc;               /**< location of I2C pins */
 #endif
-    CMU_Clock_TypeDef cmu;  /**< the device CMU channel */
-    IRQn_Type irq;          /**< the devices base IRQ channel */
-    uint32_t speed;         /**< the bus speed */
+    uint32_t speed;             /**< the bus speed */
+    CMU_Clock_TypeDef cmu;      /**< the device CMU channel */
+    IRQn_Type irq;              /**< the devices base IRQ channel */
+    bool use_internal_pull_ups; /**< enable internal pull-ups on SDA and SCL pins */
 } i2c_conf_t;
 
 /**
@@ -453,7 +457,7 @@ typedef struct {
 typedef enum {
     PWM_LEFT = timerModeUp,           /**< use left aligned PWM */
     PWM_RIGHT = timerModeDown,        /**< use right aligned PWM */
-    PWM_CENTER = timerModeUp          /**< not supported, use left aligned */
+    PWM_CENTER = timerModeUpDown      /**< use center aligned PWM */
 } pwm_mode_t;
 /** @} */
 #endif /* ndef DOXYGEN */
@@ -565,13 +569,6 @@ typedef struct {
 /** @} */
 
 /**
- * @brief   Use LETIMER as the base timer for XTIMER
- */
-#ifndef CONFIG_EFM32_XTIMER_USE_LETIMER
-#define CONFIG_EFM32_XTIMER_USE_LETIMER   0
-#endif
-
-/**
  * @brief   UART device configuration.
  */
 #ifndef DOXYGEN
@@ -655,6 +652,17 @@ typedef struct {
     CMU_Clock_TypeDef cmu;  /**< the device CMU channel */
     IRQn_Type irq;          /**< the devices base IRQ channel */
 } uart_conf_t;
+
+/**
+ * @brief   Ethernet peripheral configuration
+ */
+typedef struct {
+    gpio_t phy_en_pin;      /**< PHY power enable, GPIO_UNDEF if unused */
+    gpio_t phy_rst_pin;     /**< PHY reset, GPIO_UNDEF if unused */
+    uint32_t routeloc1;     /**< Pre-shifted bits for ETH->ROUTELOC1 */
+    uint16_t speed;         /**< Default link speed (MII BMCR speed/duplex bits) */
+    uint8_t phy_addr;       /**< MIIM address */
+} eth_conf_t;
 
 /**
  * @brief   CPU provides own pm_off() function

@@ -1,9 +1,6 @@
 /*
- * Copyright (C) 2015 Martine Lenders <mlenders@inf.fu-berlin.de>
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
+ * SPDX-FileCopyrightText: 2015 Martine Lenders <mlenders@inf.fu-berlin.de>
+ * SPDX-License-Identifier: LGPL-2.1-only
  */
 
 /**
@@ -71,8 +68,7 @@ void gnrc_sixlowpan_dispatch_recv(gnrc_pktsnip_t *pkt, void *context,
     (void)page;
 #ifndef MODULE_GNRC_IPV6
     type = GNRC_NETTYPE_UNDEF;
-    for (gnrc_pktsnip_t *ptr = pkt; (ptr || (type == GNRC_NETTYPE_UNDEF));
-         ptr = ptr->next) {
+    for (gnrc_pktsnip_t *ptr = pkt; ptr != NULL; ptr = ptr->next) {
         if ((ptr->next) && (ptr->next->type == GNRC_NETTYPE_NETIF)) {
             type = ptr->type;
             break;
@@ -230,7 +226,7 @@ static void _receive(gnrc_pktsnip_t *pkt)
 #endif
     }
 #ifdef MODULE_GNRC_SIXLOWPAN_FRAG
-    else if (sixlowpan_frag_is((sixlowpan_frag_t *)dispatch)) {
+    else if (sixlowpan_frag_is_snip(payload)) {
         DEBUG("6lo: received 6LoWPAN fragment\n");
         gnrc_sixlowpan_frag_recv(pkt, NULL, 0);
         return;
