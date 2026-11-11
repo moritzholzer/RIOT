@@ -17,9 +17,9 @@
 #include <errno.h>
 
 #include "net/ieee802154/mac.h"
-#include "mac_internal.h"
-#include "mac_pib.h"
-#include "mac_fsm.h"
+#include "net/ieee802154/mac_internal.h"
+#include "net/ieee802154/mac_pib.h"
+#include "net/ieee802154/mac_fsm.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"
@@ -65,7 +65,6 @@ void ieee802154_mac_init_with_devtype(ieee802154_mac_t *mac,
     mac->submac.dev = hal_dev;
     mac->dev_type = dev_type;
     mac->cbs = *cbs;
-    mac->cbs.mac = mac;
     ieee802154_mac_pib_init(mac);
     ieee802154_init_mac_internal(mac);
 }

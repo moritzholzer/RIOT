@@ -9,6 +9,7 @@
  * @{
  *
  * @file
+ * @brief IEEE 802.15.4 MAC internal initialization.
  * @author Moritz Holzer <moritz.holzer@haw-hamburg.de>
  */
 
@@ -22,6 +23,8 @@ extern "C" {
 
 /**
  * @brief Initialize internal MAC state.
+ *
+ * @param[in,out] mac  MAC descriptor or callback context.
  */
 void ieee802154_init_mac_internal(ieee802154_mac_t *mac);
 

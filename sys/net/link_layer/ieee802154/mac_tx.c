@@ -7,10 +7,10 @@
 #include "mutex.h"
 #include "ztimer.h"
 
-#include "mac_pib.h"
-#include "mac_fsm.h"
-#include "mac_tx.h"
-#include "mac_queue.h"
+#include "net/ieee802154/mac_pib.h"
+#include "net/ieee802154/mac_fsm.h"
+#include "net/ieee802154/mac_tx.h"
+#include "net/ieee802154/mac_queue.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"
@@ -91,7 +91,7 @@ static void _tx_finish(ieee802154_mac_t *mac,
 
     /* Call upper layer last, after queue state and RX state are repaired. */
     if ((confirm_type == IEEE802154_FCF_TYPE_DATA) && mac->cbs.data_confirm) {
-        mac->cbs.data_confirm(mac->cbs.mac, confirm_handle, confirm_status);
+        mac->cbs.data_confirm(mac, confirm_handle, confirm_status);
     }
 }
 
@@ -178,7 +178,7 @@ void ieee802154_mac_tick(ieee802154_mac_t *mac)
 
     for (unsigned i = 0; i < expired_count; i++) {
         if (mac->cbs.data_confirm) {
-            mac->cbs.data_confirm(mac->cbs.mac,
+            mac->cbs.data_confirm(mac,
                                   expired[i].handle,
                                   expired[i].status);
         }

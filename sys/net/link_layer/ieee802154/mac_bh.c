@@ -7,8 +7,8 @@
 #include "mutex.h"
 #include "ztimer.h"
 
-#include "mac_bh.h"
-#include "mac_fsm.h"
+#include "net/ieee802154/mac_bh.h"
+#include "net/ieee802154/mac_fsm.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"

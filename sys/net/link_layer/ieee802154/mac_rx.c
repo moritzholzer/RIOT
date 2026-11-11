@@ -10,9 +10,9 @@
 #include "byteorder.h"
 
 #include "net/ieee802154/mac.h"
-#include "mac_fsm.h"
-#include "mac_queue.h"
-#include "mac_pib.h"
+#include "net/ieee802154/mac_fsm.h"
+#include "net/ieee802154/mac_queue.h"
+#include "net/ieee802154/mac_pib.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"

@@ -16,9 +16,9 @@
 #include "ztimer.h"
 #include "mutex.h"
 
-#include "mac_internal.h"
-#include "mac_pib.h"
-#include "mac_tx.h"
+#include "net/ieee802154/mac_internal.h"
+#include "net/ieee802154/mac_pib.h"
+#include "net/ieee802154/mac_tx.h"
 
 #define ENABLE_DEBUG 0
 #include "debug.h"

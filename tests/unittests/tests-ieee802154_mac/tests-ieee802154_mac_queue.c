@@ -15,7 +15,7 @@
 #include "embUnit/embUnit.h"
 
 #include "net/ieee802154/mac.h"
-#include "mac_queue.h"
+#include "net/ieee802154/mac_queue.h"
 #include "tests-ieee802154_mac.h"
 
 static ieee802154_mac_txq_t txq;

@@ -6,9 +6,9 @@
 #include <string.h>
 
 #include "byteorder.h"
-#include "mac_queue.h"
-#include "mac_fsm.h"
-#include "mac_pib.h"
+#include "net/ieee802154/mac_queue.h"
+#include "net/ieee802154/mac_fsm.h"
+#include "net/ieee802154/mac_pib.h"
 #include "net/ieee802154.h"
 #include "net/ieee802154/radio.h"
 

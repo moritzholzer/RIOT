@@ -8,10 +8,10 @@
 #include "mutex.h"
 #include "byteorder.h"
 
-#include "mac_fsm.h"
-#include "mac_pib.h"
-#include "mac_queue.h"
-#include "mac_tx.h"
+#include "net/ieee802154/mac_fsm.h"
+#include "net/ieee802154/mac_pib.h"
+#include "net/ieee802154/mac_queue.h"
+#include "net/ieee802154/mac_tx.h"
 #include "net/ieee802154/mac.h"
 #include "net/ieee802154.h"
 #include "net/eui_provider.h"
@@ -265,7 +265,7 @@ static ieee802154_mac_state_t _mac_fsm_state_idle(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_SLEEP;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
         if (ctx && mac->cbs.data_indication) {
-            mac->cbs.data_indication(mac->cbs.mac, ctx->buf, ctx->info);
+            mac->cbs.data_indication(mac, ctx->buf, ctx->info);
         }
         return IEEE802154_MAC_STATE_IDLE;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
@@ -382,7 +382,7 @@ static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
         if (ctx && mac->cbs.data_indication) {
-            mac->cbs.data_indication(mac->cbs.mac, ctx->buf, ctx->info);
+            mac->cbs.data_indication(mac, ctx->buf, ctx->info);
         }
         return IEEE802154_MAC_STATE_SCAN_ACTIVE;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
@@ -408,7 +408,7 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
     case IEEE802154_MAC_FSM_EV_RX_CMD_ASSOC_REQ:
         if (ctx && mac->cbs.mlme_associate_indication)
         {
-            mac->cbs.mlme_associate_indication(mac->cbs.mac, ctx->src,
+            mac->cbs.mlme_associate_indication(mac, ctx->src,
                                                (uint8_t)ctx->src_len,
                                                ctx->src_mode, ctx->capability);
         }
@@ -421,7 +421,7 @@ static ieee802154_mac_state_t _mac_fsm_state_coordinator(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_COORDINATOR;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
         if (ctx && mac->cbs.data_indication) {
-            mac->cbs.data_indication(mac->cbs.mac, ctx->buf, ctx->info);
+            mac->cbs.data_indication(mac, ctx->buf, ctx->info);
         }
         return IEEE802154_MAC_STATE_COORDINATOR;
     case IEEE802154_MAC_FSM_EV_RX_CMD_DATA_REQ:
@@ -483,7 +483,7 @@ static ieee802154_mac_state_t _mac_fsm_state_device(ieee802154_mac_t *mac,
         return IEEE802154_MAC_STATE_IDLE;
     case IEEE802154_MAC_FSM_EV_RX_DATA:
         if (ctx && mac->cbs.data_indication) {
-            mac->cbs.data_indication(mac->cbs.mac, ctx->buf, ctx->info);
+            mac->cbs.data_indication(mac, ctx->buf, ctx->info);
         }
         return IEEE802154_MAC_STATE_DEVICE;
     case IEEE802154_MAC_FSM_EV_TX_REQUEST:
@@ -555,13 +555,13 @@ static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
             }
             (void)ieee802154_set_idle(&mac->submac);
             if (mac->cbs.mlme_associate_confirm) {
-                mac->cbs.mlme_associate_confirm(mac->cbs.mac, 0,
+                mac->cbs.mlme_associate_confirm(mac, 0,
                                                 ctx->assoc_short_addr);
             }
             return IEEE802154_MAC_STATE_DEVICE;
         }
         if (ctx && mac->cbs.mlme_associate_confirm) {
-            mac->cbs.mlme_associate_confirm(mac->cbs.mac, ctx->assoc_status,
+            mac->cbs.mlme_associate_confirm(mac, ctx->assoc_status,
                                             ctx->assoc_short_addr);
         }
         (void)ieee802154_set_idle(&mac->submac);
@@ -572,7 +572,7 @@ static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
     case IEEE802154_MAC_FSM_EV_ASSOC_TIMEOUT:
         mac->assoc_pending = false;
         if (mac->cbs.mlme_associate_confirm) {
-            mac->cbs.mlme_associate_confirm(mac->cbs.mac, -ETIMEDOUT, 0xFFFF);
+            mac->cbs.mlme_associate_confirm(mac, -ETIMEDOUT, 0xFFFF);
         }
         (void)ieee802154_set_idle(&mac->submac);
         return IEEE802154_MAC_STATE_IDLE;
