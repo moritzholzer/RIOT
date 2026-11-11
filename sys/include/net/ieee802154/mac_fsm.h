@@ -55,7 +55,7 @@ typedef struct {
     iolist_t *buf;                            /**< Received frame buffer */
     const ieee802154_rx_info_t *info;         /**< Received frame metadata */
 
-    eui64_t src_addr;                         /**< Extended source address */
+    ieee802154_ext_addr_t src_addr;           /**< Extended source address */
     uint8_t src[IEEE802154_LONG_ADDRESS_LEN]; /**< Source address bytes */
     le_uint16_t src_pan;                      /**< Source PAN identifier in little-endian byte order */
     int src_len;                              /**< Source address length in bytes */

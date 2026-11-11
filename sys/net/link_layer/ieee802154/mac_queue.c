@@ -142,12 +142,12 @@ bool ieee802154_indirectq_has_addr(ieee802154_mac_indirect_q_t *indirect_q,
         }
 
         if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
-            const network_uint16_t *short_addr =
-                (const network_uint16_t *)dst_addr;
+            const ieee802154_short_addr_t *short_addr =
+                (const ieee802154_short_addr_t *)dst_addr;
 
             if (memcmp(&txq->dst_short_addr,
                        short_addr,
-                       sizeof(network_uint16_t)) == 0) {
+                       sizeof(ieee802154_short_addr_t)) == 0) {
                 return true;
             }
         }
@@ -271,7 +271,7 @@ void ieee802154_mac_indirect_fp_update(ieee802154_mac_t *mac,
     }
     if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
         if (dst_addr) {
-            const network_uint16_t *short_addr = dst_addr;
+            const ieee802154_short_addr_t *short_addr = dst_addr;
 
             ieee802154_submac_config_src_address_match(&mac->submac,
                 still_pending ? IEEE802154_SRC_MATCH_SHORT_ADD
@@ -323,7 +323,7 @@ void ieee802154_mac_handle_indirectq_auto_free(ieee802154_mac_t *mac,
     if (ieee802154_mac_tx_empty(txq)) {
         const ieee802154_addr_mode_t key_mode = txq->key_mode;
         const void *dst_addr = NULL;
-        network_uint16_t dst_short = { .u16 = 0 };
+        ieee802154_short_addr_t dst_short = { .u16 = 0 };
         ieee802154_ext_addr_t dst_ext;
 
         if (key_mode == IEEE802154_ADDR_MODE_SHORT) {
@@ -451,10 +451,10 @@ int ieee802154_mac_indirectq_search_slot_locked(ieee802154_mac_t *mac,
         return -1;
     }
 
-    network_uint16_t short_addr = { .u16 = 0 };
+    ieee802154_short_addr_t short_addr = { .u16 = 0 };
     const ieee802154_ext_addr_t *ext_addr = NULL;
     if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
-        short_addr = *(const network_uint16_t *)dst_addr;
+        short_addr = *(const ieee802154_short_addr_t *)dst_addr;
     }
     else if (dst_mode == IEEE802154_ADDR_MODE_EXTENDED) {
         ext_addr = (const ieee802154_ext_addr_t *)dst_addr;
@@ -520,7 +520,7 @@ static int _indirectq_get_slot_locked(ieee802154_mac_t *mac,
         q->has_dst_addr = true;
         q->dst_mode = dst_mode;
         if (dst_mode == IEEE802154_ADDR_MODE_SHORT) {
-            q->dst_short_addr = *(const network_uint16_t *)dst_addr;
+            q->dst_short_addr = *(const ieee802154_short_addr_t *)dst_addr;
             q->key_mode = IEEE802154_ADDR_MODE_SHORT;
         }
         else if (dst_mode == IEEE802154_ADDR_MODE_EXTENDED) {

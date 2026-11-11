@@ -296,7 +296,7 @@ static ieee802154_mac_state_t _mac_fsm_state_scan_active(ieee802154_mac_t *mac,
 {
     uint8_t idx;
     int res;
-    network_uint16_t dst_addr = byteorder_htons(0xFFFFU);
+    ieee802154_short_addr_t dst_addr = byteorder_htons(0xFFFFU);
 
     switch (ev) {
     case IEEE802154_MAC_FSM_EV_SCAN_DONE:
@@ -528,7 +528,7 @@ static ieee802154_mac_state_t _mac_fsm_state_associating(ieee802154_mac_t *mac,
         mac->assoc_pending = false;
         if (ctx && ctx->assoc_status == 0) {
             if (ctx->src_mode == IEEE802154_ADDR_MODE_SHORT) {
-                network_uint16_t coord_short = { .u8 = { ctx->src[0], ctx->src[1] } };
+                ieee802154_short_addr_t coord_short = { .u8 = { ctx->src[0], ctx->src[1] } };
                 ieee802154_pib_value_t v = {
                     .type = IEEE802154_PIB_TYPE_NUI16,
                     .v.short_addr = coord_short,
@@ -692,7 +692,7 @@ static int _mac_fsm_process_ev(ieee802154_mac_t *mac, ieee802154_mac_fsm_ev_t ev
         bool coord = true;
         ieee802154_pib_value_t pib_value;
         ieee802154_mac_mlme_get(mac, IEEE802154_PIB_EXTENDED_ADDRESS, &pib_value);
-        network_uint16_t short_addr;
+        ieee802154_short_addr_t short_addr;
         eui_short_from_eui64(&pib_value.v.ext_addr, &short_addr);
         pib_value.type = IEEE802154_PIB_TYPE_NUI16;
         pib_value.v.short_addr = short_addr;

@@ -349,7 +349,7 @@ void ieee802154_mac_mlme_set(ieee802154_mac_t *mac,
         break;
 
     case IEEE802154_PIB_TYPE_EUI64:
-        assert(e->size == sizeof(eui64_t));
+        assert(e->size == sizeof(ieee802154_ext_addr_t));
         memcpy(dst, &in->v.ext_addr, sizeof(in->v.ext_addr));
         break;
 
@@ -396,7 +396,7 @@ void ieee802154_mac_mlme_get(ieee802154_mac_t *mac,
         break;
 
     case IEEE802154_PIB_TYPE_EUI64:
-        assert(e->size == sizeof(eui64_t));
+        assert(e->size == sizeof(ieee802154_ext_addr_t));
         memcpy(&out->v.ext_addr, src, sizeof(out->v.ext_addr));
         break;
 

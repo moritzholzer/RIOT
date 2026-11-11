@@ -186,8 +186,8 @@ typedef struct {
  */
 typedef struct {
     uint16_t PAN_ID;                              /**< PAN identifier */
-    eui64_t EXTENDED_ADDRESS;                     /**< Device extended address */
-    network_uint16_t SHORT_ADDR;                  /**< Device short address in network byte order */
+    ieee802154_ext_addr_t EXTENDED_ADDRESS;       /**< Device extended address */
+    ieee802154_short_addr_t SHORT_ADDR;           /**< Device short address in network byte order */
     ieee802154_ext_addr_t COORD_EXTENDED_ADDRESS; /**< Coordinator extended address */
     ieee802154_short_addr_t COORD_SHORT_ADDRESS;  /**< Coordinator short address */
 
@@ -310,15 +310,15 @@ typedef struct {
  * @brief IEEE 802.15.4 PIB attribute value.
  */
 typedef struct {
-    ieee802154_pib_type_t type;      /**< Data type selecting the union member */
+    ieee802154_pib_type_t type;             /**< Data type selecting the union member */
     union {
-        bool b;                      /**< Boolean value */
-        uint8_t u8;                  /**< Unsigned 8-bit value */
-        uint16_t u16;                /**< Unsigned 16-bit value */
-        ieee802154_octets_t bytes;   /**< Octet buffer and length */
-        eui64_t ext_addr;            /**< Extended address value */
-        network_uint16_t short_addr; /**< Short address value in network byte order */
-    } v;                             /**< Attribute value */
+        bool b;                             /**< Boolean value */
+        uint8_t u8;                         /**< Unsigned 8-bit value */
+        uint16_t u16;                       /**< Unsigned 16-bit value */
+        ieee802154_octets_t bytes;          /**< Octet buffer and length */
+        ieee802154_ext_addr_t ext_addr;     /**< Extended address value */
+        ieee802154_short_addr_t short_addr; /**< Short address value in network byte order */
+    } v;                                    /**< Attribute value */
 } ieee802154_pib_value_t;
 
 /**
@@ -620,7 +620,7 @@ typedef struct {
     ieee802154_mac_tx_desc_t q[IEEE802154_MAC_TXQ_LEN]; /**< outgoing queue */
 
     ieee802154_ext_addr_t dst_ext_addr;                 /**< key or destination extended addr */
-    network_uint16_t dst_short_addr;                    /**< destination short addr (network order) */
+    ieee802154_short_addr_t dst_short_addr;             /**< destination short addr (network order) */
     ieee802154_addr_mode_t key_mode;                    /**< key type for queue matching */
     ieee802154_addr_mode_t dst_mode;                    /**< destination addr mode for frame */
     bool has_dst_addr;                                  /**< Whether a destination address is configured */
