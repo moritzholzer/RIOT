@@ -114,16 +114,9 @@ int ieee802154_mlme_start_request(ieee802154_mac_t *mac,
 }
 
 int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
-                                 ieee802154_addr_mode_t src_mode,
-                                 ieee802154_addr_mode_t dst_mode,
-                                 uint16_t dst_panid,
-                                 const void *dst_addr,
-                                 iolist_t *msdu,
-                                 uint8_t msdu_handle,
-                                 bool ack_req,
-                                 bool indirect)
+                                const ieee802154_mcps_data_req_t *req)
 {
-    if (!mac) {
+    if (!mac || !req) {
         return -EINVAL;
     }
 
@@ -131,14 +124,14 @@ int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
     ieee802154_mac_fsm_ctx_t ctx;
 
     memset(&ctx, 0, sizeof(ctx));
-    ctx.data_dst_addr = dst_addr;
-    ctx.msdu = msdu;
-    ctx.msdu_handle = msdu_handle;
-    ctx.src_mode = src_mode;
-    ctx.dst_mode = dst_mode;
-    ctx.dst_panid = dst_panid;
-    ctx.ack_req = ack_req;
-    ctx.indirect = indirect;
+    ctx.data_dst_addr = req->dst_addr;
+    ctx.msdu = req->msdu;
+    ctx.msdu_handle = req->msdu_handle;
+    ctx.src_mode = req->src_mode;
+    ctx.dst_mode = req->dst_mode;
+    ctx.dst_panid = req->dst_panid;
+    ctx.ack_req = req->ack_req;
+    ctx.indirect = req->indirect;
     ctx.result = &res;
 
     if (ieee802154_mac_fsm_request(mac, IEEE802154_MAC_FSM_EV_MCPS_DATA_REQ, &ctx) < 0) {

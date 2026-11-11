@@ -364,6 +364,21 @@ typedef void (*ieee802154_mcps_data_indication_cb_t)(void *mac, iolist_t *msdu,
                                                      const ieee802154_rx_info_t *info);
 
 /**
+ * @brief IEEE 802.15.4 MCPS-DATA request parameters.
+ */
+typedef struct {
+    ieee802154_addr_mode_t src_mode; /**< Source address mode */
+    ieee802154_addr_mode_t dst_mode; /**< Destination address mode */
+    uint16_t dst_panid;              /**< Destination PAN identifier in host byte order */
+    const void *dst_addr;            /**< Destination address in network byte order;
+                                         NULL selects an unaddressed queue where supported */
+    iolist_t *msdu;                  /**< MAC service data unit as an I/O list */
+    uint8_t msdu_handle;             /**< MSDU handle returned with transmission confirmation */
+    bool ack_req;                    /**< Whether to request an acknowledgment */
+    bool indirect;                   /**< Whether the transmission is indirect */
+} ieee802154_mcps_data_req_t;
+
+/**
  * @brief IEEE 802.15.4 scan result entry.
  */
 typedef struct {
@@ -821,26 +836,16 @@ int ieee802154_mlme_start_request(ieee802154_mac_t *mac, uint16_t channel);
 /**
  * @brief Issue a MAC MCPS-DATA request.
  *
- * @param[in,out] mac      MAC descriptor or callback context.
- * @param[in] src_mode     Source address mode.
- * @param[in] dst_mode     Destination address mode.
- * @param[in] dst_panid    Destination PAN identifier in host byte order.
- * @param[in] dst_addr     Destination address in network byte order; NULL selects an unaddressed queue where supported.
- * @param[in] msdu         MAC service data unit as an I/O list.
- * @param[in] msdu_handle  MSDU handle returned with transmission confirmation.
- * @param[in] ack_req      Whether to request an acknowledgment.
- * @param[in] indirect     Whether to wait for a data request before transmission.
+ * @note The request and destination address are consumed during this call and
+ *       may be released after it returns. On success, the MSDU I/O list and its
+ *       buffers must remain valid until transmission confirmation.
+ *
+ * @param[in,out] mac  MAC descriptor or callback context.
+ * @param[in] req     Request parameters.
  * @return 0 on success, or a negative error code on failure.
  */
 int ieee802154_mcps_data_request(ieee802154_mac_t *mac,
-                                 ieee802154_addr_mode_t src_mode,
-                                 ieee802154_addr_mode_t dst_mode,
-                                 uint16_t dst_panid,
-                                 const void *dst_addr,
-                                 iolist_t *msdu,
-                                 uint8_t msdu_handle,
-                                 bool ack_req,
-                                 bool indirect);
+                                const ieee802154_mcps_data_req_t *req);
 /**
  * @brief Issue a MAC MLME-ASSOCIATE request.
  *

@@ -701,15 +701,17 @@ static int send(uint8_t *dst,
     uint8_t handle = (uint8_t)(msdu_buf - buf_pool);
     ieee802154_pib_value_t panid;
     ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_PAN_ID, &panid);
-    int res = ieee802154_mcps_data_request(&mac,
-                                           IEEE802154_ADDR_MODE_EXTENDED,
-                                           IEEE802154_ADDR_MODE_EXTENDED,
-                                           panid.v.u16,
-                                           dst,
-                                           msdu,
-                                           handle,
-                                           true,
-                                           indirect);
+    const ieee802154_mcps_data_req_t req = {
+        .src_mode = IEEE802154_ADDR_MODE_EXTENDED,
+        .dst_mode = IEEE802154_ADDR_MODE_EXTENDED,
+        .dst_panid = panid.v.u16,
+        .dst_addr = dst,
+        .msdu = msdu,
+        .msdu_handle = handle,
+        .ack_req = true,
+        .indirect = indirect,
+    };
+    int res = ieee802154_mcps_data_request(&mac, &req);
     if (res < 0) {
         printf("error in request\n");
         _mac_buf_free(&mac, msdu_buf);
@@ -734,15 +736,17 @@ static int send_short(network_uint16_t dst_short,
     uint8_t handle = (uint8_t)(msdu_buf - buf_pool);
     ieee802154_pib_value_t panid;
     ieee802154_mac_mlme_get_request(&mac, IEEE802154_PIB_PAN_ID, &panid);
-    int res = ieee802154_mcps_data_request(&mac,
-                                           IEEE802154_ADDR_MODE_SHORT,
-                                           IEEE802154_ADDR_MODE_SHORT,
-                                           panid.v.u16,
-                                           &dst_short,
-                                           msdu,
-                                           handle,
-                                           true,
-                                           indirect);
+    const ieee802154_mcps_data_req_t req = {
+        .src_mode = IEEE802154_ADDR_MODE_SHORT,
+        .dst_mode = IEEE802154_ADDR_MODE_SHORT,
+        .dst_panid = panid.v.u16,
+        .dst_addr = &dst_short,
+        .msdu = msdu,
+        .msdu_handle = handle,
+        .ack_req = true,
+        .indirect = indirect,
+    };
+    int res = ieee802154_mcps_data_request(&mac, &req);
     if (res < 0) {
         printf("error in request\n");
         _mac_buf_free(&mac, msdu_buf);

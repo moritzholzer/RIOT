@@ -764,15 +764,17 @@ static int _send(gnrc_netif_t *netif, gnrc_pktsnip_t *pkt)
         return -EMSGSIZE;
     }
 
-    res = ieee802154_mcps_data_request(&dev->mac,
-                                       src_mode, dst_mode,
-                                       panid.v.u16,
-                                       dst,
-                                       (iolist_t *)pkt->next,
-                                       0xFF,
-                                       ack_req,
-                                       dev->tx_indirect ||
-                                       (netif_hdr->flags & GNRC_NETIF_HDR_FLAGS_TX_INDIRECT));
+    const ieee802154_mcps_data_req_t req = {
+        .src_mode = src_mode,
+        .dst_mode = dst_mode,
+        .dst_panid = panid.v.u16,
+        .dst_addr = dst,
+        .msdu = (iolist_t *)pkt->next,
+        .msdu_handle = 0xFF,
+        .ack_req = ack_req,
+        .indirect = dev->tx_indirect || (netif_hdr->flags & GNRC_NETIF_HDR_FLAGS_TX_INDIRECT),
+    };
+    res = ieee802154_mcps_data_request(&dev->mac, &req);
     if (res < 0) {
         return res;
     }
